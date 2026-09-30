@@ -1,0 +1,21 @@
+# Data files
+*.bin
+*.athdf
+*.hdf5
+*.h5
+*.vtk
+*.tab
+
+# Python
+__pycache__/
+*.pyc
+*.pyo
+.ipynb_checkpoints/
+
+# Environment
+.env
+venv/
+.venv/
+
+# OS
+.DS_Store

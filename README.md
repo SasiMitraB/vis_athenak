@@ -36,3 +36,4 @@ and are distributed under its [BSD-3-Clause license](https://github.com/IAS-Astr
 ## Contributors
 
 - Meemik Roy (meemikroy@iisc.ac.in)
+- Abhiram K  (abhiram1@iisc.ac.in)

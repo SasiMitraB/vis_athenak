@@ -1,26 +1,32 @@
 # vis_athenak
 
-Visualization and analysis toolkit for AthenaK simulation outputs.
+Visualization and analysis tools for [AthenaK](https://github.com/IAS-Astrophysics/athenak) simulation outputs.
 
 Developed by the IISc Computational Astrophysics group.
 
 ## Structure
 
+```
 vis_athenak/
-├── data_processing/   # Convert .bin/.athdf/.hdf5 → numpy arrays
+├── data_processing/   # Read raw simulation files → numpy arrays
 ├── plotting/          # Visualization scripts
 └── utils/             # Constants, unit conversions, helpers
+```
 
 ## Setup
 
-git clone https://github.com/<your-org>/vis_athenak
+Requires Python 3.10+.
+
+```bash
+git clone git@github.com:meemik-iisc/vis_athenak.git
 cd vis_athenak
-pip install -r requirements.txt
+```
 
 ## Usage
 
-Scripts in plotting/ expect preprocessed arrays from data_processing/.
-Raw simulation data should be placed locally and is not tracked by git.
+Scripts in `plotting/` use arrays produced by `data_processing/`.
+Raw simulation data and cached `.npy` arrays are not tracked by git.
 
 ## Contributors
+
 - Meemik Roy (meemikroy@iisc.ac.in)

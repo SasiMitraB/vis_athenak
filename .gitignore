@@ -5,6 +5,7 @@
 *.h5
 *.vtk
 *.tab
+*.npy
 
 # Python
 __pycache__/

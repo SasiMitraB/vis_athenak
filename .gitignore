@@ -20,3 +20,11 @@ venv/
 
 # OS
 .DS_Store
+
+# Test simulation outputs; Specific to Sasi's Macbook.
+test_data/
+
+# Packaging
+build/
+dist/
+*.egg-info/

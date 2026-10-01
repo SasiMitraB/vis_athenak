@@ -1,0 +1,35 @@
+[build-system]
+requires = ["setuptools>=64"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "vis_athenak"
+version = "0.1.0"
+description = "Visualization and analysis tools for AthenaK simulation outputs"
+readme = "README.md"
+requires-python = ">=3.10"
+dependencies = [
+    "numpy>=1.24",
+    "h5py>=3.8",
+]
+
+[project.optional-dependencies]
+plot = [
+    "matplotlib>=3.7",
+    "scipy>=1.10",
+]
+
+[project.urls]
+Repository = "https://github.com/meemik-iisc/vis_athenak"
+
+[tool.setuptools]
+# The repo root is the vis_athenak package itself (see __init__.py), so it can
+# be imported from a plain clone as well as from an installed copy.
+package-dir = { "vis_athenak" = "." }
+packages = [
+    "vis_athenak",
+    "vis_athenak.simulation_data",
+    "vis_athenak.data_processing",
+    "vis_athenak.plotting",
+    "vis_athenak.utils",
+]

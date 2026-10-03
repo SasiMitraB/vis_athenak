@@ -6,8 +6,8 @@ from simulation_data import Frame, SimulationData, parse_athinput
 
 
 # Change this to the folder path on your system
-athinput = "test_data/kh2d/athinput.kh2d"
-datafolder = "test_data/kh2d/bin"  
+athinput = "test_data/kh_cooling_64x128/kh_cooling.athinput"
+datafolder = "test_data/kh_cooling_64x128/bin"
 
 # load the simulation (this doesn't read any data yet, just finds the files)
 sim = SimulationData(athinput=athinput, datafolder=datafolder)

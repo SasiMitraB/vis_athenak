@@ -543,6 +543,12 @@ def athdf(filename, raw=False, data=None, quantities=None, dtype=None, level=Non
         if not subsample and not fast_restrict and max_level > level:
             restricted_data = np.zeros((lx3, lx2, lx1), dtype=bool)
 
+        # Read each quantity for all blocks at once; per-block h5py reads are
+        # dominated by Python call overhead
+        quantity_data = {q: f[dataset][index]
+                         for q, dataset, index in zip(quantities, quantity_datasets,
+                                                      quantity_indices)}
+
         # Go through blocks in data file
         for block_num in range(num_blocks):
             # Extract location information
@@ -586,7 +592,7 @@ def athdf(filename, raw=False, data=None, quantities=None, dtype=None, level=Non
                 # Assign values
                 for q, dataset, index in zip(quantities, quantity_datasets,
                                              quantity_indices):
-                    block_data = f[dataset][index, block_num, :]
+                    block_data = quantity_data[q][block_num]
                     if s > 1:
                         if nx1 > 1:
                             block_data = np.repeat(block_data, s, axis=2)
@@ -652,8 +658,8 @@ def athdf(filename, raw=False, data=None, quantities=None, dtype=None, level=Non
                                                  quantity_indices):
                         data[q][kl_d:ku_d,
                                 jl_d:ju_d,
-                                il_d:iu_d] = f[dataset][index, block_num, kl_s+o3:ku_s:s,
-                                                        jl_s+o2:ju_s:s, il_s+o1:iu_s:s]
+                                il_d:iu_d] = quantity_data[q][block_num, kl_s+o3:ku_s:s,
+                                                              jl_s+o2:ju_s:s, il_s+o1:iu_s:s]
 
                 # Apply fast (uniform Cartesian) restriction
                 elif fast_restrict:
@@ -670,10 +676,10 @@ def athdf(filename, raw=False, data=None, quantities=None, dtype=None, level=Non
                                 for io in io_vals:
                                     data[q][kl_d:ku_d,
                                             jl_d:ju_d,
-                                            il_d:iu_d] += f[dataset][index, block_num,
-                                                                     kl_s+ko:ku_s:s,
-                                                                     jl_s+jo:ju_s:s,
-                                                                     il_s+io:iu_s:s]
+                                            il_d:iu_d] += quantity_data[q][block_num,
+                                                                           kl_s+ko:ku_s:s,
+                                                                           jl_s+jo:ju_s:s,
+                                                                           il_s+io:iu_s:s]
                         data[q][kl_d:ku_d, jl_d:ju_d, il_d:iu_d] /= s ** num_extended_dims
 
                 # Apply exact (volume-weighted) restriction

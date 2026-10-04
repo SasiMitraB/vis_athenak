@@ -132,7 +132,7 @@ from matplotlib.colors import TwoSlopeNorm
 from matplotlib.colors import SymLogNorm
 from mpl_toolkits.axes_grid1 import make_axes_locatable
 # from matplotlib.transforms import TransformedBbox, Affine2D
-from ism_cooling import ISMCoolFn
+from utils.ism_cooling import ISMCoolFn
 
 dens_label      = r"$\mathbf{\rho\,\, [{m_p/cm^3}]}$"
 pres_label      = r"$\mathbf{P_{gas}\,\, [10^{-8}\,dyne/cm^2]}$"

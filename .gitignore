@@ -31,3 +31,6 @@ dist/
 
 # Benchmark scripts, outputs and results; not tracked.
 benchmarks/
+
+# Editor settings (contain local paths)
+.vscode/

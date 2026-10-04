@@ -6,8 +6,9 @@ Lazy, frame-by-frame access to the outputs of an AthenaK run.
     sim = SimulationData("runs/blast/athinput.blast", "runs/blast")
     len(sim)                    # number of output frames
     for frame in sim:
-        rho = frame["dens"]     # files for this frame are read here
+        rho = frame["dens"]     # only the file holding dens is read here
     sim[-1].time                # header-only read, no field data loaded
+    sim[-1].fields              # {name: Field}, from the file headers only
 
 Frames are discovered from the <output> blocks of the athinput file: an
 output block with ``file_type = bin`` writes ``{basename}.{id}.{NNNNN}.bin``
@@ -19,8 +20,11 @@ picked up as well.
 Modules
 -------
 athinput         parse_athinput: athinput file -> {section: {key: value}}
-readers          read_time / read_file: one output file -> header time / arrays
+readers          read_time / read_variable_names / read_file: one output file ->
+                 header time / variable names / arrays
 frame            Frame: one lazily loaded snapshot
+field            Field: one lazily loaded variable of a Frame
+athdf            fast reads of single variables from .athdf files
 simulation_data  SimulationData: discovers the frames of a run
 
 Run as a module to print a summary of a run:
@@ -29,7 +33,8 @@ Run as a module to print a summary of a run:
 """
 
 from .athinput import parse_athinput
+from .field import Field
 from .frame import Frame
 from .simulation_data import SimulationData
 
-__all__ = ["Frame", "SimulationData", "parse_athinput"]
+__all__ = ["Field", "Frame", "SimulationData", "parse_athinput"]

@@ -28,3 +28,6 @@ test_data/
 build/
 dist/
 *.egg-info/
+
+# Benchmark scripts, outputs and results; not tracked.
+benchmarks/

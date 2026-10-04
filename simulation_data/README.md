@@ -11,7 +11,7 @@ from simulation_data import SimulationData
 sim = SimulationData("test_data/kh2d/athinput.kh2d", "test_data/kh2d/bin")
 len(sim)                    # 31
 for frame in sim:
-    rho = frame["dens"]     # files for this frame are read here
+    rho = frame["dens"]     # only the file holding dens is read here
 sim[-1].time                # 3.0, read from the file header only
 ```
 
@@ -23,13 +23,15 @@ every feature. Run it from the repo root with `python example_script.py`.
 | File | Contents |
 |---|---|
 | `athinput.py` | `parse_athinput(path)`: athinput file → `{section: {key: value}}`, values as strings |
-| `readers.py` | `read_time(path)` (header only) and `read_file(path, dtype)` (full file), built on `data_processing/bin_convert.py` and `athena_read.py` |
+| `readers.py` | `read_time(path)` and `read_variable_names(path)` (header only), and `read_file(path, dtype, quantities)`, built on `data_processing/bin_convert.py` and `athena_read.py` |
 | `frame.py` | `Frame`: one snapshot, lazily loaded |
+| `field.py` | `Field`: one variable of a frame, lazily loaded |
+| `athdf.py` | fast reads of single variables from `.athdf` files (block layout read once per file) |
 | `simulation_data.py` | `SimulationData`: finds the frames of a run |
 | `__main__.py` | `python -m simulation_data <athinput> <datafolder>`: prints the frames and their times |
 
 Import from the package (`from simulation_data import SimulationData, Frame,
-parse_athinput`) and run from the repo root, since `readers.py` imports
+Field, parse_athinput`) and run from the repo root, since `readers.py` imports
 `data_processing`.
 
 ## SimulationData
@@ -81,13 +83,37 @@ cached until you call `frame.unload()`.
 
 | | |
 |---|---|
-| `frame["dens"]` | field array, shape `(nx3, nx2, nx1)`; loads all of the frame's files on first access |
-| `frame["x1v"]`, `frame["x1f"]`, … | cell-centre and face coordinates |
-| `frame.keys()`, `"bcc1" in frame` | available names (loads the data) |
-| `frame.time` | simulation time; reads only the header if the data isn't loaded |
+| `frame.fields` | `{name: Field}` for every variable in the frame's files, from the file headers only |
+| `frame["dens"]` | shorthand for `frame.fields["dens"].data`: the array, shape `(nx3, nx2, nx1)` |
+| `frame.load(["dens", "mom1"])` | read several fields with one read per file (faster than one at a time, see below) |
+| `frame["x1v"]`, `frame.grid` | coordinates (`x1f`, `x1v`, …) and file attributes (`Time`, `NumCycles`, …) |
+| `frame.keys()`, `"bcc1" in frame` | field and grid names (reads the grid if a name isn't a field) |
+| `frame.time` | simulation time; reads only the header if the grid isn't loaded |
 | `frame.number`, `frame.paths` | file number; `{output id: path}` |
-| `frame.data` | the merged dict itself |
-| `frame.is_loaded`, `frame.unload()` | check whether data is cached; drop it (it is re-read on the next access) |
+| `frame.data` | every field and the grid in one dict (reads everything) |
+| `frame.is_loaded`, `frame.unload()` | whether any field is in memory; drop all fields and the grid |
+
+### Fields and what gets read
+
+| | |
+|---|---|
+| `field.data` | the array, read on first access |
+| `field.is_loaded`, `field.unload()` | whether it's in memory; drop it |
+| `field.name`, `field.output`, `field.path` | variable name, output id, file it's read from |
+| `np.log10(field)` | a `Field` works directly with numpy |
+
+* **`.athdf`**: only the requested fields are read, by `athdf.py`. The
+  file's block layout is read once per frame (about 0.25 ms on the 64x128
+  test run), and each field then costs about 0.1 ms. The result is
+  identical to `athena_read.athdf`, mesh refinement included. Files with
+  ghost zones, or slices/sums along an extended dimension, fall back to
+  `athena_read.athdf`, which costs about 1 ms per call. Coordinates are only
+  read when `frame.grid` or `frame["x1v"]` is used.
+* **`.bin`**: the reader can only read a file whole, so asking for one field
+  loads every field of that file. Files of the frame's other outputs are
+  still not read (`dens` from `hydro_w` doesn't read `hydro_u`).
+* If two outputs have a variable with the same name, the first output's is
+  `fields["dens"]` and the others are `fields["hydro_u/dens"]`.
 
 Variable names are AthenaK's own (`dens`, `velx`, `eint`, `mom1`, `ener`,
 `bcc1`, `s_00`, …). No renaming or derived fields are added yet. Arrays are
@@ -102,12 +128,11 @@ contain the file's HDF5 attributes (`RootGridSize`, `VariableNames`, …).
 
 ## TODO
 
-1. **`Field` class.** A simulation is made of frames, and a frame is made of
-   fields. A `Field` would hold a field's array together with its units, and
-   `frame["dens"]` would return a `Field` instead of a bare numpy array. Add
-   this once per-field lazy loading is available. At the moment, accessing
-   any field loads every file of the frame (see the `frame["dens"]` row
-   above), so a per-field object has nothing to be lazy about yet.
+1. **Per-field `.bin` reads.** The `.bin` reader still reads whole files.
+   Reading one variable at a time from a file would need a reader that
+   seeks over the other variables of each meshblock. Fields could also
+   carry units (`Field` exists now; `frame["dens"]` still returns a plain
+   array).
 2. **Derived fields.** These work like fields, but are defined by a function
    that combines other fields, for example temperature from `eint` and `dens`.
    The result is computed when the frame is loaded and stored with the

@@ -2,6 +2,9 @@
 numpy>=1.24
 h5py>=3.8
 
+# Machine-specific paths from .env (config.py, utils/env.py)
+python-dotenv>=1.0
+
 # Plotting (data_processing/plot_slice.py, plotting/)
 matplotlib>=3.7
 scipy>=1.10

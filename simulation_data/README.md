@@ -15,8 +15,10 @@ for frame in sim:
 sim[-1].time                # 3.0, read from the file header only
 ```
 
-[`example_script.py`](../example_script.py) in the repo root walks through
-every feature. Run it from the repo root with `python example_script.py`.
+[`test/test_simulation_data.py`](../test/test_simulation_data.py) walks through
+every feature. Edit the paths at its top and run it with
+`python test/test_simulation_data.py` (it imports the installed `vis_athenak`,
+so `pip install -e .` first).
 
 ## Layout
 

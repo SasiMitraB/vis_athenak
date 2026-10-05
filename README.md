@@ -8,23 +8,146 @@ Developed by the IISc Computational Astrophysics group.
 
 ```
 vis_athenak/
-├── simulation_data/   # SimulationData / Frame: lazy access to a run's outputs
-├── data_processing/   # Low-level readers for raw simulation files (.bin, .athdf)
-├── plotting/          # Visualization scripts
-└── utils/             # Constants, unit conversions, helpers
+├── main.py              # Entry point: python main.py makes the plots config.py asks for
+├── config.py            # What to plot: simulations, variables, styles, layout, switches
+├── .env.example         # Template for .env: machine-specific root folders, conda env name
+├── .envrc               # direnv: loads .env and activates the conda env on cd into the repo
+├── simulation_data/     # SimulationData / Frame: lazy, frame-by-frame access to a run
+├── plotting/            # 2D slices, combined multi-panel figures, videos
+├── utils/               # Unit conversions, .env loading, cooling function
+├── data_processing/     # Low-level readers / converters for raw outputs (.bin, .athdf, .prtclbin)
+└── test/                # Walkthrough of SimulationData on a real run
 ```
+
+### What each file does
+
+**Top level**
+
+| File | Purpose |
+|---|---|
+| `main.py` | Entry point. With no command it runs the tasks switched on in `config.MAIN` (slices, combined figure, video); `slices`, `combined` and `video` run a single task with all its options. |
+| `config.py` | Everything you change between runs: `RUN` / `SIMULATIONS` (which runs, with paths relative to the `.env` roots), `PLOT` (slice axis, units, figure size), `FONTS`, `PLOT_VARS` (quantity, units, label, colormap, limits per variable), `PLOT_ORDER`, `COMBINED` (panel grid and video), `MAIN` (task switches) and `N_WORKERS`. |
+| `.env.example` | Template for `.env` (gitignored): `ATHENAK_DIR`, `ATHINPUT_DIR`, `CONDA_ENV`. |
+| `.envrc` | [direnv](https://direnv.net) config: on entering the repo, loads `.env` and activates `CONDA_ENV`. |
+| `__init__.py` | Makes the repo importable as the `vis_athenak` package. |
+| `pyproject.toml`, `requirements.txt` | Package metadata and dependencies. |
+
+**`simulation_data/`** — reading a run (see [its README](simulation_data/README.md))
+
+| File | Purpose |
+|---|---|
+| `simulation_data.py` | `SimulationData`: finds a run's output frames from its athinput `<output>` blocks; indexable and iterable. |
+| `frame.py` | `Frame`: one snapshot, reading fields and the grid from disk only when used. |
+| `field.py` | `Field`: one lazily loaded variable of a frame; works directly with numpy. |
+| `athinput.py` | `parse_athinput`: athinput file → `{section: {key: value}}`. |
+| `readers.py` | Reads headers (time, variable names) and data from single `.bin` / `.athdf` files. |
+| `athdf.py` | Fast single-variable reads from `.athdf` files. |
+| `__main__.py` | `python -m simulation_data <athinput> <datafolder>` prints a summary of a run. |
+
+**`plotting/`** — figures
+
+| File | Purpose |
+|---|---|
+| `quantities.py` | `get(frame, name, params, units)`: raw variables and derived ones (`pres`, `temp`, `vmag`, `bmag`, `beta`, `entropy`, `t_cool`), converted to the units asked for. |
+| `slices.py` | `take_slice` (cut a 2D slice out of a 3D array) and `draw_slice` (draw it on a matplotlib axes); plain functions with no config, for your own scripts. |
+| `slice2d.py` | `python main.py slices`: one image per frame and variable. Also holds the helpers the other scripts share (variable settings, fonts, worker count). |
+| `combined.py` | `python main.py combined`: one multi-panel image per frame, laid out by `config.COMBINED["layout"]`; can compare several runs side by side. |
+| `video.py` | `python main.py video`: stitches numbered images into an mp4 with ffmpeg. |
+
+**`utils/`** — shared helpers
+
+| File | Purpose |
+|---|---|
+| `units.py` | `Units`: AthenaK code units → cgs and display units (pc, Myr, km/s, K, cm⁻³, ...), from the athinput `<units>` block. |
+| `env.py` | Loads `.env` and reads the root folders (`env_path`); shell variables take precedence. |
+| `ism_cooling.py` | `ISMCoolFn(T)`: the ISM cooling function Λ(T), used for `t_cool`. |
+
+**`data_processing/`** — raw file handling
+
+| File | Purpose |
+|---|---|
+| `athena_read.py` | AthenaK's reader for `.athdf`, `.tab` and other outputs. |
+| `bin_convert.py` | AthenaK's `.bin` reader and `.bin` → `.athdf`/`.xdmf` converter. |
+| `make_athdf_fast.py` | Converts a whole run's `.bin` files to `.athdf` in parallel. |
+| `read_prtcl_bin.py` | `read_particle_binary(file)`: reads AthenaK particle outputs (`.prtclbin`) into a dict of positions, velocities, tags/ids, and grid quantities (e.g. `dens`, `temp`) at the particle locations. |
+| `plot_slice.py` | AthenaK's original standalone slice plotter (kept for reference; `plotting/` replaces it). |
+
+**`test/`**
+
+| File | Purpose |
+|---|---|
+| `test_simulation_data.py` | Walkthrough of every `SimulationData` / `Frame` / `Field` feature on a real run; edit the paths at the top and run `python test/test_simulation_data.py` (needs `pip install -e .`). |
 
 ## Setup
 
-Requires Python 3.10+.
+Requires Python 3.10+, and [ffmpeg](https://ffmpeg.org) for videos.
 
 ```bash
 git clone git@github.com:meemik-iisc/vis_athenak.git
 cd vis_athenak
 pip install -r requirements.txt
+cp .env.example .env          # then edit the paths in .env
 ```
 
-## Usage
+Optionally, with [direnv](https://direnv.net) installed and hooked into your
+shell (`eval "$(direnv hook bash)"` at the end of `~/.bashrc`), run
+`direnv allow` once in the repo.  From then on, entering it loads `.env` and
+the conda environment named by `CONDA_ENV`, and leaving it unloads them.
+
+## Making plots
+
+1. **`.env`** — root folders on your machine (`ATHENAK_DIR`, `ATHINPUT_DIR`)
+   and `CONDA_ENV`.  Variables exported in your shell take precedence.
+2. **`config.py`** — add your run to `SIMULATIONS` (paths relative to those
+   roots), set `RUN`, choose the variables (`PLOT_VARS`, `PLOT_ORDER`), the
+   panel grid (`COMBINED["layout"]`) and what to make (`MAIN`).
+3. **Run** from the repo root:
+
+```bash
+python main.py                              # what config.MAIN switches on
+python main.py --no-make-slices --frames 0:21:5 -w 4
+python main.py slices dens temp t_cool      # one task, with all its options
+python main.py combined --layout "dens,temp;pres,t_cool" --video
+python main.py --no-save-png                # video only: no slices, combined images deleted
+python main.py combined --video --no-save-png   # the same, as a single task
+python main.py video --fps 5                # video of existing combined images
+python main.py [slices|combined|video] --help
+```
+
+Images go to the run's `out` folder from `config.SIMULATIONS`: one folder per
+variable for the slices, and `combined/` for the combined images and video.
+
+### config.py switches
+
+`MAIN` decides what `python main.py` makes; each switch can be flipped for one
+run with a flag:
+
+| Switch | Flag | Effect |
+|---|---|---|
+| `make_slices` | `--[no-]make-slices` | One image per frame and variable in `PLOT_ORDER`. |
+| `make_combined` | `--[no-]make-combined` | One image per frame of `COMBINED["layout"]`. |
+| `make_video` | `--[no-]make-video` | An mp4 of the combined images. |
+| `save_png` | `--[no-]save-png` | When off: no slices, and the combined images are deleted once the video is made (only those written in that run; without a video they are kept). |
+
+Frames are plotted in parallel by `N_WORKERS` worker processes (`1` runs
+serially); `-w N` / `--workers N` overrides it for one run.
+
+### Combined layout
+
+`COMBINED["layout"]` is a list of rows; each cell is a variable (plotted for
+`RUN`), a `(run, variable)` pair, or `None` for an empty panel:
+
+```python
+COMBINED["layout"] = [["dens", "temp"],
+                      ["pres", "t_cool"]]                       # 2x2, one run
+COMBINED["layout"] = [[("run_a", "temp"), ("run_b", "temp")]]   # two runs side by side
+```
+
+A row (or column) holding one variable throughout shares one colorbar.
+On the command line the same grid is `--layout "dens,temp;pres,t_cool"`
+(rows by `;`, cells by `,`, `run:var` for another run, `-` for empty).
+
+## Using SimulationData from Python
 
 ```python
 from simulation_data import SimulationData
@@ -35,7 +158,19 @@ for frame in sim:
     rho = frame["dens"]     # data is read from disk only here
 ```
 
-For a full tutorial refer to the [Example Script](./example_script.py)
+[`test/test_simulation_data.py`](test/test_simulation_data.py) walks through
+every feature.  For your own figures, combine it with `plotting.quantities.get`
+and `plotting.slices.take_slice` / `draw_slice`:
+
+```python
+import config
+from plotting.quantities import get
+from plotting.slices import take_slice, draw_slice
+
+run = config.resolve()                    # paths of config.RUN from .env
+sim = SimulationData(run["athinput"], run["data"])
+T = get(sim[-1], "temp", sim.params, units="K")
+```
 
 ### Using it from another project
 
@@ -70,12 +205,6 @@ The clone has to be named `vis_athenak` (the default), since a folder name
 with a hyphen can't be imported.  Install the dependencies with
 `pip install -r vis_athenak/requirements.txt`.
 
-### Inside this repo
-
-Run from the repository root.  `python -m simulation_data <athinput> <datafolder>`
-prints a summary of a run.  Scripts in `plotting/` build on `SimulationData`.
-
-
 ## Acknowledgements
 
 `data_processing/athena_read.py`, `bin_convert.py`, and `plot_slice.py` are
@@ -86,3 +215,4 @@ and are distributed under its [BSD-3-Clause license](https://github.com/IAS-Astr
 
 - Meemik Roy (meemikroy@iisc.ac.in)
 - Abhiram K  (abhiram1@iisc.ac.in)
+- Behara Sasi Mitra ()

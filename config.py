@@ -40,15 +40,15 @@ MAIN = dict(
 # Parallel worker processes for plotting frames (slices and combined figures);
 # 1 = serial.  Each worker holds one frame of every run it plots in memory, so
 # lower this for large runs.  -w/--workers overrides it for one run.
-N_WORKERS = 4
+N_WORKERS = 2
 
-RUN = "cbox_02Myr"  # default simulation
+RUN = "tcgm_tvw"  # default simulation
 
 SIMULATIONS = {
-    "cbox_02Myr": dict(
-        athinput="cooling_box/cbox.athinput",          # relative to $ATHINPUT_DIR
-        data="build_cooling_box/src/cbox_02Myr",       # relative to $DATA_DIR
-        out="build_cooling_box/src/cbox_02Myr/plots",  # relative to $DATA_DIR
+    "tcgm_tvw": dict(
+        athinput="wind_outflow/wind_outflow_tcgm_tmdot_tvw.athinput",          # relative to $ATHINPUT_DIR
+        data="build_wind_outflow_tcgm_tmdot_tvw/src/tcgm13_tmdot31_vw2_100Myr_2d/bin",       # relative to $DATA_DIR
+        out="build_wind_outflow_tcgm_tmdot_tvw/src/tcgm13_tmdot31_vw2_100Myr_2d/plots",  # relative to $DATA_DIR
         outputs=None,  # output ids, e.g. ["hydro_w"]; None = auto (see SimulationData)
         frames=None,   # frame numbers, e.g. range(0, 21, 5); None = all
     ),
@@ -79,10 +79,11 @@ def resolve(run: str = RUN) -> dict:
 PLOT = dict(
     axis="z",             # slice normal: x, y or z (z for 2D runs)
     position=None,        # slice position along axis, in length_units; None = midplane
-    length_units="pc",    # axis coordinates: code, cm, pc, kpc
+    length_units="kpc",    # axis coordinates: code, cm, pc, kpc
     time_units="Myr",     # time in titles: code, s, yr, kyr, Myr
-    fig_size_single=(8.0, 8.0),
-    panel_size=(5.0, 4.5),  # combined figure: size of each panel
+    time_decimals=0,      # decimal places of the time in titles (0 = whole numbers)
+    fig_size_single=(16.0, 3.0),
+    panel_size=(16, 3),  # combined figure: size of each panel
     dpi=150,
     format="png",
 )
@@ -90,10 +91,10 @@ PLOT = dict(
 # Fonts of every figure (sizes in points).
 FONTS = dict(
     weight="bold",  # "bold" or "normal"; also applies to math text such as 10^{-4}
-    title=14,       # panel titles (the variable labels)
-    suptitle=16,    # time at the top of the figure
-    label=12,       # axis labels
-    ticks=10,       # tick labels of axes and colorbars
+    title=16,       # panel titles (the variable labels)
+    suptitle=18,    # time at the top of the figure
+    label=14,       # axis labels
+    ticks=12,       # tick labels of axes and colorbars
 )
 
 # One entry per plottable variable; the key names the output folder and the
@@ -151,13 +152,13 @@ PLOT_VARS = {
 # Variables plotted when none are named on the command line.
 PLOT_ORDER = [
     "dens",
-    "pres",
+    # "pres",
     "temp",
     # "tracer",
-    # "velx",
-    # "vely",
+    "velx",
+    "vely",
     # "entropy",
-    "t_cool",
+    # "t_cool",
 ]
 
 # Combined figure (python main.py combined) and its video (python main.py video).
@@ -169,10 +170,14 @@ PLOT_ORDER = [
 COMBINED = dict(
     name="combined",  # images <name>.<axis>.<NNNNN>.<format>, video <name>.<axis>.mp4
     layout=[
-        ["dens", "temp"],
-        ["pres", "t_cool"],
+        ["dens"],
+        ["temp"],
+        ["velx"],
+        ["vely"],
     ],
     fps=24,           # video frames per second
+    video_max_size=4096,  # video frames scaled down to at most this many pixels per side
+                          # (the encoders fail above 4096); None/0 = full size
 )
 # Comparing runs, one row per variable and one column per run:
 # COMBINED["layout"] = [[(run, var) for run in ["cbox_02Myr", "cbox_tabcool"]]

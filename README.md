@@ -53,7 +53,7 @@ vis_athenak/
 | `slices.py` | `Plane` (a lazy 2D slice of a frame, from `simulation_data/plane.py`: each field's slice is read on first use from only the meshblocks crossing it, and derived quantities are computed on the slice), `take_slice` (slice an already computed 3D array) and `draw_slice` (draw on a matplotlib axes; `imshow` for uniform grids, `pcolormesh` otherwise); plain functions with no config, for your own scripts. |
 | `slice2d.py` | `python main.py slices`: one image per frame and variable. Also holds the helpers the other scripts share (variable settings, fonts, worker count). |
 | `combined.py` | `python main.py combined`: one multi-panel image per frame, laid out by `config.COMBINED["layout"]`; can compare several runs side by side. |
-| `video.py` | `python main.py video`: stitches numbered images into an mp4 with ffmpeg. |
+| `video.py` | `python main.py video`: stitches numbered images into an mp4 with ffmpeg; frames larger than `COMBINED["video_max_size"]` (default 4096 px per side, the encoders' limit) are scaled down to fit. |
 
 **`utils/`** — shared helpers
 

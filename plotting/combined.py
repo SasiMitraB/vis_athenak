@@ -37,7 +37,7 @@ else:  # run from the repo root
 
 from .quantities import available, dimension  # noqa: E402
 from .slice2d import (  # noqa: E402
-    apply_fonts, frame_plane, n_workers, parse_frames, slice_variable, time_title,
+    apply_fonts, frame_plane, n_workers, non_negative_int, parse_frames, slice_variable, time_title,
     unit_factor, var_settings,
 )
 from .slices import draw_slice  # noqa: E402
@@ -224,6 +224,10 @@ def main(argv=None):
                         help="slice position along --axis in --length-units (default: midplane)")
     parser.add_argument("--length-units", default=plot["length_units"])
     parser.add_argument("--time-units", default=plot["time_units"])
+    parser.add_argument("--time-decimals", type=non_negative_int,
+                        default=plot.get("time_decimals", 2),
+                        help="decimal places of the time in titles "
+                             f"(default: {plot.get('time_decimals', 2)})")
     parser.add_argument("--panel-size", type=float, nargs=2, default=plot["panel_size"])
     parser.add_argument("--dpi", type=int, default=plot["dpi"])
     parser.add_argument("--format", default=plot["format"])
@@ -238,6 +242,10 @@ def main(argv=None):
                              f"deletes them (default: config.MAIN = {config.MAIN['save_png']})")
     parser.add_argument("--fps", type=float, default=combined["fps"],
                         help=f"video frames per second (default: {combined['fps']})")
+    parser.add_argument("--max-size", type=int, default=combined.get("video_max_size", 4096),
+                        help="scale video frames down to at most this many pixels per "
+                             "side; 0 keeps the full size (default: config.COMBINED"
+                             f"['video_max_size'] = {combined.get('video_max_size', 4096)})")
     args = parser.parse_args(argv)
 
     layout = normalize_layout(args.layout or combined["layout"], args.run)
@@ -284,7 +292,8 @@ def main(argv=None):
             parser.error(f"run {name}: {err}")
 
     opts = {k: getattr(args, k) for k in
-            ("axis", "position", "length_units", "time_units", "panel_size", "dpi",
+            ("axis", "position", "length_units", "time_units", "time_decimals",
+             "panel_size", "dpi",
              "format", "name")}
     opts["outdir"] = Path(args.outdir) if args.outdir else default_outdir(layout)
     params = {name: sim.params for name, sim in sims.items()}
@@ -308,7 +317,7 @@ def main(argv=None):
         from .video import make_video
         # Only this run's images, not leftovers of other frames in the folder.
         out = make_video(written, Path(opts["outdir"]) / f"{args.name}.{args.axis}.mp4",
-                         fps=args.fps)
+                         fps=args.fps, max_size=args.max_size or None)
         print(f"video: {out}")
         if not (config.MAIN["save_png"] if args.save_png is None else args.save_png):
             # Only the images written by this run; the video holds them now.

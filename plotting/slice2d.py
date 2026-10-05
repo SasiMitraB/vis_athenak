@@ -117,10 +117,19 @@ def slice_variable(plane: Plane, var: dict, params: dict, opts: dict):
     return plane.x * length, plane.y * length, data
 
 
+def non_negative_int(text: str) -> int:
+    """argparse type: a whole number >= 0."""
+    value = int(text)
+    if value < 0:
+        raise argparse.ArgumentTypeError(f"must be >= 0, got {value}")
+    return value
+
+
 def time_title(frame, params: dict, opts: dict) -> str:
     t = frame.time * unit_factor(params, "time", opts["time_units"])
     suffix = "" if opts["time_units"] == "code" else f" {opts['time_units']}"
-    return f"t = {t:.2f}{suffix}"
+    decimals = opts.get("time_decimals", 2)
+    return f"t = {t:.{decimals}f}{suffix}"
 
 
 def plot_frame(frame, variables, params, basename, opts) -> list[Path]:
@@ -177,6 +186,10 @@ def main(argv=None):
                         help=f"units of the axes (default: {plot['length_units']})")
     parser.add_argument("--time-units", default=plot["time_units"],
                         help=f"units of the time in titles (default: {plot['time_units']})")
+    parser.add_argument("--time-decimals", type=non_negative_int,
+                        default=plot.get("time_decimals", 2),
+                        help="decimal places of the time in titles "
+                             f"(default: {plot.get('time_decimals', 2)})")
     # The rest override PLOT_VARS for every variable plotted.
     parser.add_argument("--units", help="units of the variable (default: from PLOT_VARS)")
     parser.add_argument("--cmap", help="colormap (default: from PLOT_VARS)")
@@ -226,7 +239,8 @@ def main(argv=None):
                      f"{list(config.PLOT_VARS)}, quantities: {available(frames[0])}")
 
     opts = {k: getattr(args, k) for k in
-            ("axis", "position", "length_units", "time_units", "units", "cmap", "norm",
+            ("axis", "position", "length_units", "time_units", "time_decimals", "units",
+             "cmap", "norm",
              "vmin", "vmax", "figsize", "dpi", "format", "outdir")}
     # Fail on a bad unit before spawning any work.
     try:

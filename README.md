@@ -75,6 +75,27 @@ with a hyphen can't be imported.  Install the dependencies with
 Run from the repository root.  `python -m simulation_data <athinput> <datafolder>`
 prints a summary of a run.  Scripts in `plotting/` build on `SimulationData`.
 
+Root folders on your machine go in `.env` (copy `.env.example`; it is
+gitignored), or export `ATHENAK_DIR` and `ATHINPUT_DIR` in your shell.
+`config.py` lists the simulations by name, with paths relative to those
+roots, and `RUN` picks the default; `--run <name>` picks another.  It also
+sets what is plotted: `PLOT` (axis, units, figure size), `PLOT_VARS`
+(quantity, units, label, cmap, norm, vmin/vmax per variable) and `PLOT_ORDER`
+(the default variables).  Then:
+
+```bash
+python main.py                              # PLOT_ORDER, every frame of config.RUN
+python main.py dens temp t_cool             # these PLOT_VARS entries
+python main.py temp --run cbox_tabcool      # another simulation in config.py
+python main.py temp --axis y --frames 0:21:5 --vmin 1e4 --vmax 1e7 -c 4
+python main.py --help                       # all options
+```
+
+With [direnv](https://direnv.net) installed and hooked into your shell
+(`eval "$(direnv hook bash)"` in `~/.bashrc`), run `direnv allow` once in the
+repo: from then on, entering it loads `.env` and the conda environment named
+by `CONDA_ENV`, and leaving it unloads them.
+
 
 ## Acknowledgements
 

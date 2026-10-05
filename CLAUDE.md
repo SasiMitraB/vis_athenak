@@ -15,7 +15,7 @@ Developed by the IISc Computational Astrophysics group.
   - `combined.py` — multi-panel image per frame from `COMBINED["layout"]`
   - `video.py` — ffmpeg mp4 from numbered images (libx264, else h264_nvenc, else mpeg4)
 - `utils/` — `units.py` (code → cgs/display units, `UNIT_NAMES`), `env.py` (`.env` loading via python-dotenv), `ism_cooling.py` (`ISMCoolFn`)
-- `data_processing/` — AthenaK's raw readers/converters (`athena_read.py`, `bin_convert.py`), `make_athdf_fast.py`; `plot_slice.py` is AthenaK's legacy plotter, superseded by `plotting/`
+- `data_processing/` — AthenaK's raw readers/converters (`athena_read.py`, `bin_convert.py`), `make_athdf_fast.py`, `read_prtcl_bin.py` (particle `.prtclbin` reader); `plot_slice.py` is AthenaK's legacy plotter, superseded by `plotting/`
 - `test/test_simulation_data.py` — walkthrough of the SimulationData API on a real run
 
 ## Related work

@@ -15,7 +15,7 @@ vis_athenak/
 ├── simulation_data/     # SimulationData / Frame: lazy, frame-by-frame access to a run
 ├── plotting/            # 2D slices, combined multi-panel figures, videos
 ├── utils/               # Unit conversions, .env loading, cooling function
-├── data_processing/     # Low-level readers / converters for raw outputs (.bin, .athdf)
+├── data_processing/     # Low-level readers / converters for raw outputs (.bin, .athdf, .prtclbin)
 └── test/                # Walkthrough of SimulationData on a real run
 ```
 
@@ -69,6 +69,7 @@ vis_athenak/
 | `athena_read.py` | AthenaK's reader for `.athdf`, `.tab` and other outputs. |
 | `bin_convert.py` | AthenaK's `.bin` reader and `.bin` → `.athdf`/`.xdmf` converter. |
 | `make_athdf_fast.py` | Converts a whole run's `.bin` files to `.athdf` in parallel. |
+| `read_prtcl_bin.py` | `read_particle_binary(file)`: reads AthenaK particle outputs (`.prtclbin`) into a dict of positions, velocities, tags/ids, and grid quantities (e.g. `dens`, `temp`) at the particle locations. |
 | `plot_slice.py` | AthenaK's original standalone slice plotter (kept for reference; `plotting/` replaces it). |
 
 **`test/`**

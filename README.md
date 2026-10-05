@@ -49,7 +49,7 @@ vis_athenak/
 | File | Purpose |
 |---|---|
 | `quantities.py` | `get(frame, name, params, units)`: raw variables and derived ones (`pres`, `temp`, `vmag`, `bmag`, `beta`, `entropy`, `t_cool`), converted to the units asked for. |
-| `slices.py` | `take_slice` (cut a 2D slice out of a 3D array) and `draw_slice` (draw it on a matplotlib axes); plain functions with no config, for your own scripts. |
+| `slices.py` | `Plane` (a 2D slice of a frame: raw fields are sliced on first use, so derived quantities are computed on the slice only), `take_slice` (slice an already computed 3D array) and `draw_slice` (draw on a matplotlib axes; `imshow` for uniform grids, `pcolormesh` otherwise); plain functions with no config, for your own scripts. |
 | `slice2d.py` | `python main.py slices`: one image per frame and variable. Also holds the helpers the other scripts share (variable settings, fonts, worker count). |
 | `combined.py` | `python main.py combined`: one multi-panel image per frame, laid out by `config.COMBINED["layout"]`; can compare several runs side by side. |
 | `video.py` | `python main.py video`: stitches numbered images into an mp4 with ffmpeg. |
@@ -163,16 +163,18 @@ for frame in sim:
 
 [`test/test_simulation_data.py`](test/test_simulation_data.py) walks through
 every feature.  For your own figures, combine it with `plotting.quantities.get`
-and `plotting.slices.take_slice` / `draw_slice`:
+and `plotting.slices.Plane` / `draw_slice`:
 
 ```python
 import config
 from plotting.quantities import get
-from plotting.slices import take_slice, draw_slice
+from plotting.slices import Plane, draw_slice
 
 run = config.resolve()                    # paths of config.RUN from .env
 sim = SimulationData(run["athinput"], run["data"])
-T = get(sim[-1], "temp", sim.params, units="K")
+plane = Plane(sim[-1], axis="z")          # midplane; position= picks another
+T = get(plane, "temp", sim.params, units="K")   # computed on the slice only
+draw_slice(ax, plane.x, plane.y, T, cmap="inferno", norm="log")
 ```
 
 ### Using it from another project

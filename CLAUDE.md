@@ -10,7 +10,7 @@ Developed by the IISc Computational Astrophysics group.
 - `simulation_data/` — `SimulationData` / `Frame` / `Field`: lazy, frame-by-frame access to a run (athinput + output folder); plotting and utils build on these classes
 - `plotting/`
   - `quantities.py` — `get(frame, name, params, units)`; raw variables plus derived ones in `DERIVED`, each with a dimension for unit conversion
-  - `slices.py` — `take_slice` / `draw_slice`; pure functions, no config
+  - `slices.py` — `Plane` (frame-like 2D slice; fields sliced on first use so derived quantities are computed on the slice), `take_slice`, `draw_slice` (imshow for uniform grids, pcolormesh otherwise); no config
   - `slice2d.py` — single-variable images; also the shared helpers (`var_settings`, `slice_variable`, `time_title`, `apply_fonts`, `n_workers`, `parse_frames`)
   - `combined.py` — multi-panel image per frame from `COMBINED["layout"]`
   - `video.py` — ffmpeg mp4 from numbered images (libx264, else h264_nvenc, else mpeg4)
@@ -27,7 +27,8 @@ Developed by the IISc Computational Astrophysics group.
 - Modules support both import styles: `if "." in __package__:` relative imports (as `vis_athenak.*`), else top-level imports (run from the root); `config.py` uses `if __package__:`
 - Machine-specific paths go only in `.env`; `config.py` holds paths relative to those roots and is the same on every machine
 - New settings go in `config.py` with a command-line flag overriding them; plotting functions take settings as arguments rather than reading config globals (except the CLI entry points and `slice2d` helpers)
-- New plottable quantities: add to `DERIVED` in `plotting/quantities.py` (code units, with a dimension) and a style entry in `PLOT_VARS`
+- New plottable quantities: add to `DERIVED` in `plotting/quantities.py` (code units, with a dimension) and a style entry in `PLOT_VARS`; derived functions must use only `frame[...]` and elementwise numpy so they work on a `Plane`
+- Frames still load whole 3D variables (lazy = deferred, per variable, not spatial); reading only the slice's meshblocks is not implemented yet
 - Frames are plotted in parallel with `ProcessPoolExecutor`; worker functions must be module-level and call `apply_fonts()` themselves
 - Raw simulation data is never committed (`*.bin`, `*.athdf`, `*.h5`, ... are gitignored); it lives outside the repo, located through `.env`
 - Processed arrays may be cached as `.npy` files (also gitignored)

@@ -37,7 +37,8 @@ else:  # run from the repo root
 
 from .quantities import available, dimension  # noqa: E402
 from .slice2d import (  # noqa: E402
-    apply_fonts, n_workers, parse_frames, slice_variable, time_title, unit_factor, var_settings,
+    apply_fonts, frame_plane, n_workers, parse_frames, slice_variable, time_title,
+    unit_factor, var_settings,
 )
 from .slices import draw_slice  # noqa: E402
 
@@ -126,7 +127,8 @@ def plot_combined(layout, frames: dict, params: dict, number: int, opts) -> Path
     cells = [(r, c, run, name) for r, row in enumerate(layout)
              for c, cell in enumerate(row) if cell is not None for run, name in [cell]]
     settings = {name: var_settings(name, opts) for _, _, _, name in cells}
-    slices = {(r, c): slice_variable(frames[run], settings[name], params[run], opts)
+    planes = {run: frame_plane(frames[run], params[run], opts) for run in frames}
+    slices = {(r, c): slice_variable(planes[run], settings[name], params[run], opts)
               for r, c, run, name in cells}
     limits = {name: shared_limits([slices[r, c][2] for r, c, _, n in cells if n == name],
                                   var)

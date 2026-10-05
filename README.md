@@ -27,7 +27,7 @@ vis_athenak/
 |---|---|
 | `main.py` | Entry point. With no command it runs the tasks switched on in `config.MAIN` (slices, combined figure, video); `slices`, `combined` and `video` run a single task with all its options. |
 | `config.py` | Everything you change between runs: `RUN` / `SIMULATIONS` (which runs, with paths relative to the `.env` roots), `PLOT` (slice axis, units, figure size), `FONTS`, `PLOT_VARS` (quantity, units, label, colormap, limits per variable), `PLOT_ORDER`, `COMBINED` (panel grid and video), `MAIN` (task switches) and `N_WORKERS`. |
-| `.env.example` | Template for `.env` (gitignored): `ATHENAK_DIR`, `ATHINPUT_DIR`, `CONDA_ENV`. |
+| `.env.example` | Template for `.env` (gitignored): `ATHENAK_DIR`, `ATHINPUT_DIR`, optional `DATA_DIR`, `CONDA_ENV`. |
 | `.envrc` | [direnv](https://direnv.net) config: on entering the repo, loads `.env` and activates `CONDA_ENV`. |
 | `__init__.py` | Makes the repo importable as the `vis_athenak` package. |
 | `pyproject.toml`, `requirements.txt` | Package metadata and dependencies. |
@@ -96,11 +96,14 @@ the conda environment named by `CONDA_ENV`, and leaving it unloads them.
 
 ## Making plots
 
-1. **`.env`** — root folders on your machine (`ATHENAK_DIR`, `ATHINPUT_DIR`)
-   and `CONDA_ENV`.  Variables exported in your shell take precedence.
-2. **`config.py`** — add your run to `SIMULATIONS` (paths relative to those
-   roots), set `RUN`, choose the variables (`PLOT_VARS`, `PLOT_ORDER`), the
-   panel grid (`COMBINED["layout"]`) and what to make (`MAIN`).
+1. **`.env`** — root folders on your machine (`ATHENAK_DIR`, `ATHINPUT_DIR`,
+   and `DATA_DIR` if the outputs are not under `ATHENAK_DIR`) and `CONDA_ENV`.
+   Variables exported in your shell take precedence.
+2. **`config.py`** — add your run to `SIMULATIONS` (`athinput` relative to
+   `ATHINPUT_DIR`; `data` and `out` relative to `DATA_DIR`, else
+   `ATHENAK_DIR`), set `RUN`, choose the variables (`PLOT_VARS`,
+   `PLOT_ORDER`), the panel grid (`COMBINED["layout"]`) and what to make
+   (`MAIN`).
 3. **Run** from the repo root:
 
 ```bash

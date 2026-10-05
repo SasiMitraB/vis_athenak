@@ -2,7 +2,8 @@
 Simulations the scripts can work on, and which one they use by default.
 
 Paths are relative to root folders given by the environment variables
-``ATHENAK_DIR`` and ``ATHINPUT_DIR`` (machine-specific), so this file is the
+``ATHINPUT_DIR`` and ``DATA_DIR`` (machine-specific; ``DATA_DIR`` defaults to
+``ATHENAK_DIR``), so this file is the
 same on every machine.  They come from the shell or a ``.env`` file (copy
 ``.env.example``); see ``utils/env.py``.  An
 absolute path in an entry is used as is.  Scripts take ``--run <name>`` to
@@ -46,8 +47,8 @@ RUN = "cbox_02Myr"  # default simulation
 SIMULATIONS = {
     "cbox_02Myr": dict(
         athinput="cooling_box/cbox.athinput",          # relative to $ATHINPUT_DIR
-        data="build_cooling_box/src/cbox_02Myr",       # relative to $ATHENAK_DIR
-        out="build_cooling_box/src/cbox_02Myr/plots",  # relative to $ATHENAK_DIR
+        data="build_cooling_box/src/cbox_02Myr",       # relative to $DATA_DIR
+        out="build_cooling_box/src/cbox_02Myr/plots",  # relative to $DATA_DIR
         outputs=None,  # output ids, e.g. ["hydro_w"]; None = auto (see SimulationData)
         frames=None,   # frame numbers, e.g. range(0, 21, 5); None = all
     ),
@@ -67,8 +68,9 @@ def resolve(run: str = RUN) -> dict:
         raise KeyError(f"unknown run {run!r}; config.SIMULATIONS has {list(SIMULATIONS)}")
     sim = dict(SIMULATIONS[run])
     sim["athinput"] = env_path("ATHINPUT_DIR") / sim["athinput"]
-    sim["data"] = env_path("ATHENAK_DIR") / sim["data"]
-    sim["out"] = env_path("ATHENAK_DIR") / sim["out"]
+    data_root = env_path("DATA_DIR", fallback="ATHENAK_DIR")
+    sim["data"] = data_root / sim["data"]
+    sim["out"] = data_root / sim["out"]
     return sim
 
 

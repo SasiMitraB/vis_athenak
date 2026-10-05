@@ -6,7 +6,7 @@ Developed by the IISc Computational Astrophysics group.
 ## Project structure
 - `main.py` — entry point; with no command runs the tasks switched on in `config.MAIN`, or one task: `slices`, `combined`, `video`
 - `config.py` — all per-run settings: `RUN` / `SIMULATIONS` (paths relative to `.env` roots, resolved by `config.resolve()`), `PLOT`, `FONTS`, `PLOT_VARS`, `PLOT_ORDER`, `COMBINED` (panel grid + video), `MAIN` (task switches), `N_WORKERS`
-- `.env` (gitignored; template `.env.example`) — machine-specific `ATHENAK_DIR`, `ATHINPUT_DIR`, `CONDA_ENV`; `.envrc` loads it with direnv
+- `.env` (gitignored; template `.env.example`) — machine-specific `ATHENAK_DIR`, `ATHINPUT_DIR`, optional `DATA_DIR` (root of run outputs, defaults to `ATHENAK_DIR`), `CONDA_ENV`; `.envrc` loads it with direnv
 - `simulation_data/` — `SimulationData` / `Frame` / `Field`: lazy, frame-by-frame access to a run (athinput + output folder); plotting and utils build on these classes
 - `plotting/`
   - `quantities.py` — `get(frame, name, params, units)`; raw variables plus derived ones in `DERIVED`, each with a dimension for unit conversion

@@ -1,8 +1,8 @@
 """
 2D slices: cutting a slice out of a frame, and drawing it on an axes.
 
-These are plain functions with no file I/O or global settings, so they can be
-combined freely, e.g. one panel per run when comparing cooling prescriptions:
+None of these use global settings, so they can be combined freely, e.g. one
+panel per run when comparing cooling prescriptions:
 
     fig, axes = plt.subplots(1, 2)
     for ax, frame in zip(axes, frames):
@@ -10,15 +10,22 @@ combined freely, e.g. one panel per run when comparing cooling prescriptions:
         T = get(plane, "temp", params, units="K")      # computed on the 2D slice only
         draw_slice(ax, plane.x, plane.y, T, cmap="inferno", norm="log", vmin=1e4, vmax=1e7)
 
-`Plane` slices each raw field the first time it is used, so derived
-quantities are computed on the slice instead of the whole box.  The full 3D
-field is still read from disk: Frame loads whole variables.
+`Plane` (``simulation_data.plane.FramePlane``) reads each raw field's slice
+the first time it is used, from only the meshblocks crossing the slice, so
+neither reading nor derived quantities touch the rest of the box.
 """
 
 from __future__ import annotations
 
 import numpy as np
 from matplotlib import colors
+
+if "." in __package__:  # imported as vis_athenak.plotting
+    from ..simulation_data.plane import FramePlane as Plane
+else:  # run from the repo root
+    from simulation_data.plane import FramePlane as Plane
+
+__all__ = ["AXIS_LABELS", "Plane", "draw_slice", "slice_index", "take_slice"]
 
 # Slice normal -> (array axis cut, horizontal coordinate, vertical coordinate).
 # Arrays are (nx3, nx2, nx1), so axis 0 is x3 (z).
@@ -51,46 +58,6 @@ def slice_index(frame, axis: str = "z", position: float | None = None) -> int:
             f"{AXIS_LABELS[normal]} = {position} outside [{faces[0]}, {faces[-1]}]"
         )
     return min(int(np.searchsorted(faces, position, side="right")) - 1, ncells - 1)
-
-
-class Plane:
-    """
-    One 2D slice of a Frame, usable wherever a Frame is (e.g. by
-    ``quantities.get``): ``plane["dens"]`` is the slice of ``frame["dens"]``,
-    cut on first use and cached.  ``plane.x`` / ``plane.y`` are the cell faces
-    of the horizontal / vertical axes, ready for `draw_slice`.
-    """
-
-    def __init__(self, frame, axis: str = "z", position: float | None = None):
-        _check_axis(axis)
-        cut, h, v = _GEOMETRY[axis]
-        self.frame, self.axis, self._cut = frame, axis, cut
-        self.index = slice_index(frame, axis, position)
-        self.x, self.y = frame[f"{h}f"], frame[f"{v}f"]
-        self._planes: dict[str, np.ndarray] = {}
-
-    @property
-    def fields(self):
-        return self.frame.fields
-
-    def __getitem__(self, name: str) -> np.ndarray:
-        if name not in self.frame.fields:  # grid entries (x1v, Time, ...) as they are
-            return self.frame[name]
-        if name not in self._planes:
-            # rows follow the vertical axis, columns the horizontal one
-            self._planes[name] = np.take(self.frame[name], self.index, axis=self._cut)
-        return self._planes[name]
-
-    def __contains__(self, name: str) -> bool:
-        return name in self.frame
-
-    @property
-    def time(self) -> float:
-        return self.frame.time
-
-    @property
-    def number(self) -> int:
-        return self.frame.number
 
 
 def take_slice(frame, data: np.ndarray, axis: str = "z", position: float | None = None):

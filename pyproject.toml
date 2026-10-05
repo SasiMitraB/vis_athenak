@@ -20,6 +20,10 @@ plot = [
     "scipy>=1.10",
 ]
 
+[project.scripts]
+# `vis_athenak [command] [options]` = `python main.py [command] [options]`
+vis_athenak = "vis_athenak.main:main"
+
 [project.urls]
 Repository = "https://github.com/meemik-iisc/vis_athenak"
 

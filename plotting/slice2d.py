@@ -37,7 +37,7 @@ else:  # run from the repo root
     from utils.units import Units
 
 from .quantities import available, dimension, get  # noqa: E402
-from .slices import draw_slice, take_slice  # noqa: E402
+from .slices import Plane, draw_slice  # noqa: E402
 
 
 def parse_frames(tokens: list[str] | None):
@@ -100,13 +100,21 @@ def var_settings(name: str, opts: dict) -> dict:
     return var
 
 
-def slice_variable(frame, var: dict, params: dict, opts: dict):
-    """(x, y, plane) of ``var`` in its units, with x and y in opts["length_units"]."""
+def frame_plane(frame, params: dict, opts: dict) -> Plane:
+    """The slice of ``frame`` set by opts["axis"] / opts["position"] (in length_units)."""
     length = unit_factor(params, "length", opts["length_units"])
     position = None if opts["position"] is None else opts["position"] / length
-    data = get(frame, var["quantity"], params, units=var["units"])
-    x, y, plane = take_slice(frame, data, axis=opts["axis"], position=position)
-    return x * length, y * length, plane
+    return Plane(frame, axis=opts["axis"], position=position)
+
+
+def slice_variable(plane: Plane, var: dict, params: dict, opts: dict):
+    """
+    (x, y, data) of ``var`` on ``plane`` in its units, with x and y in
+    opts["length_units"].  Derived quantities are computed on the slice only.
+    """
+    length = unit_factor(params, "length", opts["length_units"])
+    data = get(plane, var["quantity"], params, units=var["units"])
+    return plane.x * length, plane.y * length, data
 
 
 def time_title(frame, params: dict, opts: dict) -> str:
@@ -118,13 +126,14 @@ def time_title(frame, params: dict, opts: dict) -> str:
 def plot_frame(frame, variables, params, basename, opts) -> list[Path]:
     """Plot every variable of one frame; returns the files written."""
     apply_fonts()
+    plane = frame_plane(frame, params, opts)  # shared by all variables of the frame
     written = []
     for name in variables:
         var = var_settings(name, opts)
-        x, y, plane = slice_variable(frame, var, params, opts)
+        x, y, data = slice_variable(plane, var, params, opts)
 
         fig, ax = plt.subplots(figsize=opts["figsize"], layout="constrained")
-        draw_slice(ax, x, y, plane, cmap=var["cmap"], norm=var["norm"],
+        draw_slice(ax, x, y, data, cmap=var["cmap"], norm=var["norm"],
                    vmin=var["vmin"], vmax=var["vmax"],
                    axis=opts["axis"], length_units=opts["length_units"])
         ax.set_title(var["label"])

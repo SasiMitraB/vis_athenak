@@ -1,13 +1,18 @@
 """
 2D slices: cutting a slice out of a frame, and drawing it on an axes.
 
-Both are plain functions with no file I/O or global settings, so they can be
+These are plain functions with no file I/O or global settings, so they can be
 combined freely, e.g. one panel per run when comparing cooling prescriptions:
 
     fig, axes = plt.subplots(1, 2)
     for ax, frame in zip(axes, frames):
-        x, y, data = take_slice(frame, get(frame, "temp", params), axis="z")
-        im = draw_slice(ax, x, y, data, cmap="inferno", norm="log", vmin=1e4, vmax=1e7)
+        plane = Plane(frame, axis="z")                 # midplane
+        T = get(plane, "temp", params, units="K")      # computed on the 2D slice only
+        draw_slice(ax, plane.x, plane.y, T, cmap="inferno", norm="log", vmin=1e4, vmax=1e7)
+
+`Plane` slices each raw field the first time it is used, so derived
+quantities are computed on the slice instead of the whole box.  The full 3D
+field is still read from disk: Frame loads whole variables.
 """
 
 from __future__ import annotations
@@ -25,45 +30,103 @@ _GEOMETRY = {
 AXIS_LABELS = {"x1": "x", "x2": "y", "x3": "z"}
 
 
+def _check_axis(axis: str) -> None:
+    if axis not in _GEOMETRY:
+        raise ValueError(f"axis must be one of {list(_GEOMETRY)}, got {axis!r}")
+
+
+def slice_index(frame, axis: str = "z", position: float | None = None) -> int:
+    """
+    Index along ``axis`` of the cell containing ``position`` (code units);
+    the middle cell if ``position`` is None.
+    """
+    _check_axis(axis)
+    normal = {0: "x3", 1: "x2", 2: "x1"}[_GEOMETRY[axis][0]]
+    faces = frame[f"{normal}f"]
+    ncells = len(faces) - 1
+    if position is None:
+        return ncells // 2
+    if not faces[0] <= position <= faces[-1]:
+        raise ValueError(
+            f"{AXIS_LABELS[normal]} = {position} outside [{faces[0]}, {faces[-1]}]"
+        )
+    return min(int(np.searchsorted(faces, position, side="right")) - 1, ncells - 1)
+
+
+class Plane:
+    """
+    One 2D slice of a Frame, usable wherever a Frame is (e.g. by
+    ``quantities.get``): ``plane["dens"]`` is the slice of ``frame["dens"]``,
+    cut on first use and cached.  ``plane.x`` / ``plane.y`` are the cell faces
+    of the horizontal / vertical axes, ready for `draw_slice`.
+    """
+
+    def __init__(self, frame, axis: str = "z", position: float | None = None):
+        _check_axis(axis)
+        cut, h, v = _GEOMETRY[axis]
+        self.frame, self.axis, self._cut = frame, axis, cut
+        self.index = slice_index(frame, axis, position)
+        self.x, self.y = frame[f"{h}f"], frame[f"{v}f"]
+        self._planes: dict[str, np.ndarray] = {}
+
+    @property
+    def fields(self):
+        return self.frame.fields
+
+    def __getitem__(self, name: str) -> np.ndarray:
+        if name not in self.frame.fields:  # grid entries (x1v, Time, ...) as they are
+            return self.frame[name]
+        if name not in self._planes:
+            # rows follow the vertical axis, columns the horizontal one
+            self._planes[name] = np.take(self.frame[name], self.index, axis=self._cut)
+        return self._planes[name]
+
+    def __contains__(self, name: str) -> bool:
+        return name in self.frame
+
+    @property
+    def time(self) -> float:
+        return self.frame.time
+
+    @property
+    def number(self) -> int:
+        return self.frame.number
+
+
 def take_slice(frame, data: np.ndarray, axis: str = "z", position: float | None = None):
     """
-    Slice ``data`` (shape ``(nx3, nx2, nx1)``) normal to ``axis``.
+    Slice an already computed array ``data`` (shape ``(nx3, nx2, nx1)``)
+    normal to ``axis``; see `Plane` to slice before computing instead.
 
     ``position`` is a coordinate in code units along ``axis``; the cell
     containing it is used.  Defaults to the middle of the domain.  For 2D
     runs use ``axis="z"``.
 
-    Returns ``(x_faces, y_faces, slice)`` ready for ``pcolormesh``, with the
+    Returns ``(x_faces, y_faces, slice)`` ready for `draw_slice`, with the
     slice of shape ``(len(y_faces) - 1, len(x_faces) - 1)``.
     """
-    if axis not in _GEOMETRY:
-        raise ValueError(f"axis must be one of {list(_GEOMETRY)}, got {axis!r}")
+    _check_axis(axis)
     cut, h, v = _GEOMETRY[axis]
-    normal = {0: "x3", 1: "x2", 2: "x1"}[cut]
-
-    faces = frame[f"{normal}f"]
-    if position is None:
-        index = data.shape[cut] // 2
-    else:
-        if not faces[0] <= position <= faces[-1]:
-            raise ValueError(
-                f"{AXIS_LABELS[normal]} = {position} outside [{faces[0]}, {faces[-1]}]"
-            )
-        index = min(int(np.searchsorted(faces, position, side="right")) - 1,
-                    data.shape[cut] - 1)
-
+    index = slice_index(frame, axis, position)
     plane = np.take(data, index, axis=cut)  # rows follow v, columns follow h
     return frame[f"{h}f"], frame[f"{v}f"], plane
+
+
+def _uniform(faces) -> bool:
+    widths = np.diff(np.asarray(faces, dtype=float))
+    return widths.size > 0 and np.allclose(widths, widths[0], rtol=1e-6, atol=0)
 
 
 def draw_slice(ax, x, y, data, cmap="viridis", norm=None, vmin=None, vmax=None,
                colorbar=True, label=None, axis="z", length_units=None):
     """
-    Draw a slice from `take_slice` on ``ax``; returns the QuadMesh.
+    Draw a slice on ``ax``; ``x`` and ``y`` are cell faces (as from `Plane`
+    or `take_slice`).  Returns the image, for a colorbar.
 
     ``norm`` is "log" (non-positive values masked) or None/"linear".
     ``length_units`` is only used in the axis labels; scale ``x`` and ``y``
-    to match.
+    to match.  Uniform grids are drawn with imshow (one image, fast); other
+    grids with pcolormesh (one quad per cell).
     """
     if norm == "log":
         data = np.ma.masked_less_equal(data, 0)
@@ -73,8 +136,12 @@ def draw_slice(ax, x, y, data, cmap="viridis", norm=None, vmin=None, vmax=None,
     else:
         raise ValueError(f"norm must be 'log' or None, got {norm!r}")
 
-    mesh = ax.pcolormesh(x, y, data, cmap=cmap, norm=mpl_norm, shading="flat")
-    ax.set_aspect("equal")
+    if _uniform(x) and _uniform(y):
+        mesh = ax.imshow(data, origin="lower", extent=(x[0], x[-1], y[0], y[-1]),
+                         cmap=cmap, norm=mpl_norm, aspect="equal", interpolation="nearest")
+    else:
+        mesh = ax.pcolormesh(x, y, data, cmap=cmap, norm=mpl_norm, shading="flat")
+        ax.set_aspect("equal")
     _, h, v = _GEOMETRY[axis]
     suffix = f" [{length_units}]" if length_units and length_units != "code" else ""
     ax.set_xlabel(AXIS_LABELS[h] + suffix)

@@ -62,28 +62,43 @@ def unit_factor(params: dict, dimension: str, unit: str) -> float:
     return 1.0 if unit == "code" else Units.from_params(params).factor(dimension, unit)
 
 
+def var_settings(name: str, opts: dict) -> dict:
+    """config.plot_var(name) with the command-line overrides in ``opts`` applied."""
+    var = config.plot_var(name)
+    for key in ("cmap", "vmin", "vmax", "norm", "units"):
+        if opts.get(key) is not None:
+            var[key] = None if opts[key] == "linear" else opts[key]
+    return var
+
+
+def slice_variable(frame, var: dict, params: dict, opts: dict):
+    """(x, y, plane) of ``var`` in its units, with x and y in opts["length_units"]."""
+    length = unit_factor(params, "length", opts["length_units"])
+    position = None if opts["position"] is None else opts["position"] / length
+    data = get(frame, var["quantity"], params, units=var["units"])
+    x, y, plane = take_slice(frame, data, axis=opts["axis"], position=position)
+    return x * length, y * length, plane
+
+
+def time_title(frame, params: dict, opts: dict) -> str:
+    t = frame.time * unit_factor(params, "time", opts["time_units"])
+    suffix = "" if opts["time_units"] == "code" else f" {opts['time_units']}"
+    return f"t = {t:.2f}{suffix}"
+
+
 def plot_frame(frame, variables, params, basename, opts) -> list[Path]:
     """Plot every variable of one frame; returns the files written."""
-    length = unit_factor(params, "length", opts["length_units"])
-    time = unit_factor(params, "time", opts["time_units"])
-    position = None if opts["position"] is None else opts["position"] / length
-    time_suffix = "" if opts["time_units"] == "code" else f" {opts['time_units']}"
-
     written = []
     for name in variables:
-        var = config.plot_var(name)
-        for key in ("cmap", "vmin", "vmax", "norm", "units"):
-            if opts[key] is not None:
-                var[key] = None if opts[key] == "linear" else opts[key]
+        var = var_settings(name, opts)
+        x, y, plane = slice_variable(frame, var, params, opts)
 
-        data = get(frame, var["quantity"], params, units=var["units"])
-        x, y, plane = take_slice(frame, data, axis=opts["axis"], position=position)
-
-        fig, ax = plt.subplots(figsize=opts["figsize"])
-        draw_slice(ax, x * length, y * length, plane, cmap=var["cmap"], norm=var["norm"],
-                   vmin=var["vmin"], vmax=var["vmax"], label=var["label"],
+        fig, ax = plt.subplots(figsize=opts["figsize"], layout="constrained")
+        draw_slice(ax, x, y, plane, cmap=var["cmap"], norm=var["norm"],
+                   vmin=var["vmin"], vmax=var["vmax"],
                    axis=opts["axis"], length_units=opts["length_units"])
-        ax.set_title(f"t = {frame.time * time:.4g}{time_suffix}")
+        ax.set_title(var["label"])
+        fig.suptitle(time_title(frame, params, opts))
 
         outdir = Path(opts["outdir"]) / name
         outdir.mkdir(parents=True, exist_ok=True)

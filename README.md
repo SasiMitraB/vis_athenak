@@ -80,16 +80,29 @@ gitignored), or export `ATHENAK_DIR` and `ATHINPUT_DIR` in your shell.
 `config.py` lists the simulations by name, with paths relative to those
 roots, and `RUN` picks the default; `--run <name>` picks another.  It also
 sets what is plotted: `PLOT` (axis, units, figure size), `PLOT_VARS`
-(quantity, units, label, cmap, norm, vmin/vmax per variable) and `PLOT_ORDER`
-(the default variables).  Then:
+(quantity, units, label, cmap, norm, vmin/vmax per variable), `PLOT_ORDER`
+(the default variables), `COMBINED` (the rows and columns of the combined
+figure, and its video) and `MAIN` (what `python main.py` makes: `make_slices`,
+`make_combined`, `make_video`, and `save_png`, which when off skips the slices
+and deletes the combined images once they are in the video).  Then:
 
 ```bash
-python main.py                              # PLOT_ORDER, every frame of config.RUN
-python main.py dens temp t_cool             # these PLOT_VARS entries
-python main.py temp --run cbox_tabcool      # another simulation in config.py
-python main.py temp --axis y --frames 0:21:5 --vmin 1e4 --vmax 1e7 -c 4
-python main.py --help                       # all options
+python main.py                              # what config.MAIN switches on
+python main.py --no-make-slices --frames 0:21:5 -c 4
+python main.py slices dens temp t_cool      # one task, with all its options
+python main.py combined --layout "dens,temp;pres,t_cool" --video
+python main.py --no-save-png                # video only: no slices, combined images deleted
+python main.py combined --video --no-save-png   # the same, as a single task
+python main.py video --fps 5                # video of existing combined images (needs ffmpeg)
+python main.py [slices|combined|video] --help
 ```
+
+Each `MAIN` switch can be flipped for one run with a flag: `--make-slices` /
+`--no-make-slices`, `--make-combined` / `--no-make-combined`, `--make-video` /
+`--no-make-video` and `--save-png` / `--no-save-png`.  With `save_png = False`
+(or `--no-save-png`), `python main.py` makes no single-variable slices, and the
+combined images are deleted once the video has been made (only those written
+in that run; without a video they are kept).
 
 With [direnv](https://direnv.net) installed and hooked into your shell
 (`eval "$(direnv hook bash)"` in `~/.bashrc`), run `direnv allow` once in the
@@ -107,3 +120,4 @@ and are distributed under its [BSD-3-Clause license](https://github.com/IAS-Astr
 
 - Meemik Roy (meemikroy@iisc.ac.in)
 - Abhiram K  (abhiram1@iisc.ac.in)
+- Behara Sasi Mitra ()

@@ -10,7 +10,9 @@ pick another entry, and flags to override any single value.
 
 The second half sets what the plotting scripts draw: PLOT (figure-wide
 settings), PLOT_VARS (one entry per variable that can be plotted) and
-PLOT_ORDER (which of them are plotted by default).
+PLOT_ORDER (which of them are plotted by default), COMBINED (the grid of
+panels of the combined figure and its video) and MAIN (what `python main.py`
+makes).
 
     from config import resolve
     run = resolve()            # paths of RUN
@@ -64,6 +66,7 @@ PLOT = dict(
     length_units="pc",    # axis coordinates: code, cm, pc, kpc
     time_units="Myr",     # time in titles: code, s, yr, kyr, Myr
     fig_size_single=(8.0, 8.0),
+    panel_size=(5.0, 4.5),  # combined figure: size of each panel
     dpi=150,
     format="png",
 )
@@ -122,7 +125,7 @@ PLOT_VARS = {
 
 # Variables plotted when none are named on the command line.
 PLOT_ORDER = [
-    # "dens",
+    "dens",
     # "pres",
     "temp",
     # "tracer",
@@ -131,6 +134,33 @@ PLOT_ORDER = [
     # "entropy",
     # "t_cool",
 ]
+
+# Combined figure (python main.py combined) and its video (python main.py video).
+# layout is the grid of panels as a list of rows; each cell is
+#   "temp"                    a PLOT_VARS key (or quantity), plotted for RUN
+#   ("cbox_tabcool", "temp")  a (run, variable) pair, for comparing runs
+#   None                      an empty panel
+# A row (or column) holding one variable throughout shares one colorbar.
+COMBINED = dict(
+    name="combined",  # images <name>.<axis>.<NNNNN>.<format>, video <name>.<axis>.mp4
+    layout=[
+        ["dens", "temp"],
+        # ["pres", "t_cool"],
+    ],
+    fps=24,           # video frames per second
+)
+# Comparing runs, one row per variable and one column per run:
+# COMBINED["layout"] = [[(run, var) for run in ["cbox_02Myr", "cbox_tabcool"]]
+#                       for var in ["dens", "temp"]]
+
+# What `python main.py` (no command) makes; each switch can be flipped on the
+# command line, e.g. --no-make-slices or --save-png.
+MAIN = dict(
+    make_slices=True,    # one image per frame and variable in PLOT_ORDER
+    make_combined=True,  # one image per frame of COMBINED["layout"]
+    make_video=True,     # a video of the combined images
+    save_png=False,       # False: no slices, and the combined images are deleted once in the video
+)
 
 
 def plot_var(name: str) -> dict:

@@ -1,22 +1,93 @@
 """
-Entry point: plot 2D slices of the run set up in config.py.
+Entry point: plot the runs set up in config.py.
 
-    python main.py                           # PLOT_ORDER for config.RUN, every frame
-    python main.py dens t_cool --frames 0:21:5 -c 4
+    python main.py                       # whatever config.MAIN switches on
+    python main.py --no-make-slices --frames 0:21:5 -c 4
+    python main.py slices dens t_cool    # one task, with all its options
+    python main.py combined --layout "dens,temp;pres,t_cool" --video
+    python main.py video --fps 5
 
-What is plotted comes from config.py (RUN, SIMULATIONS, PLOT, PLOT_VARS,
-PLOT_ORDER) and the root folders from .env.  Any arguments are passed on to
-plotting/slice2d.py; ``python main.py --help`` lists them.
+Without a command, config.MAIN decides what is made: the single-variable
+slices (make_slices), the combined figure (make_combined), its video
+(make_video), and whether PNGs are kept at all (save_png: if False, the
+slices are skipped and the combined images are deleted once in the video).  Each switch has a flag (--make-video / --no-make-video, ...);
+--run, --frames and --cores are passed on to every task.  A command runs just
+that task: ``python main.py <slices|combined|video> --help`` lists its options.
 """
 
+import argparse
+import sys
+
 if __package__:  # imported as vis_athenak.main
-    from .plotting import slice2d
+    from . import config
+    from .plotting import combined, slice2d, video
 else:            # python main.py
-    from plotting import slice2d
+    import config
+    from plotting import combined, slice2d, video
+
+COMMANDS = {"slices": slice2d.main, "combined": combined.main, "video": video.main}
+
+
+def run_tasks(argv) -> None:
+    """Make what config.MAIN (or the flags overriding it) switches on."""
+    switches = config.MAIN
+    parser = argparse.ArgumentParser(
+        prog="main.py",
+        description="Make the plots switched on in config.MAIN.  Commands "
+                    "slices, combined and video run a single task.",
+    )
+    for name, help_text in [
+        ("make_slices", "one image per frame and variable in PLOT_ORDER"),
+        ("make_combined", "one image per frame of COMBINED['layout']"),
+        ("make_video", "a video of the combined images"),
+        ("save_png", "keep PNGs; if off, skip the slices and delete the combined "
+                     "images once the video is made"),
+    ]:
+        parser.add_argument(f"--{name.replace('_', '-')}", dest=name,
+                            action=argparse.BooleanOptionalAction, default=switches[name],
+                            help=f"{help_text} (default: {switches[name]})")
+    parser.add_argument("--run", default=config.RUN, choices=list(config.SIMULATIONS),
+                        help=f"simulation (default: {config.RUN})")
+    parser.add_argument("--frames", nargs="+",
+                        help="frame numbers and/or ranges like 0:21:5 (default: all)")
+    parser.add_argument("-c", "--cores", type=int, default=1,
+                        help="frames plotted in parallel (default: 1)")
+    args, extra = parser.parse_known_args(argv)
+    if extra:
+        parser.error(f"unrecognized arguments: {' '.join(extra)}; to pass options to "
+                     "one task use a command, e.g. python main.py slices dens temp")
+    if args.make_slices and not args.save_png:
+        # The slices are PNGs only, so with save_png off there is nothing to keep.
+        print("save_png is off: skipping the single-variable slices")
+        args.make_slices = False
+    if not (args.make_slices or args.make_combined or args.make_video):
+        parser.error("nothing to do: make_slices (or save_png), make_combined and "
+                     "make_video are all off")
+
+    common = ["--run", args.run, "-c", str(args.cores)]
+    if args.frames:
+        common += ["--frames", *args.frames]
+
+    if args.make_slices:
+        print("── slices")
+        slice2d.main(common)
+    if args.make_combined:
+        print("── combined" + (" + video" if args.make_video else ""))
+        combined.main(common + (["--video"] if args.make_video else [])
+                      + ["--save-png" if args.save_png else "--no-save-png"])
+    elif args.make_video:
+        # Video of combined images made earlier; save_png only deletes images
+        # made in the same run, so these are kept.
+        print("── video")
+        video.main(["--run", args.run])
 
 
 def main(argv=None):
-    slice2d.main(argv)
+    argv = sys.argv[1:] if argv is None else list(argv)
+    if argv and argv[0] in COMMANDS:
+        COMMANDS[argv[0]](argv[1:])
+    else:
+        run_tasks(argv)
 
 
 if __name__ == "__main__":

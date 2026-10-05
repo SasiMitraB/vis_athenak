@@ -118,6 +118,9 @@ python main.py video --fps 5                # video of existing combined images
 python main.py [slices|combined|video] --help
 ```
 
+After `pip install -e .`, `vis_athenak` does the same as `python main.py`
+from any directory (e.g. `vis_athenak combined --video`).
+
 Images go to the run's `out` folder from `config.SIMULATIONS`: one folder per
 variable for the slices, and `combined/` for the combined images and video.
 

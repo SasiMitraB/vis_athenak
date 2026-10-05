@@ -26,12 +26,18 @@ def load_env() -> None:
     load_dotenv(REPO_ROOT / ".env")
 
 
-def env_path(name: str) -> Path:
-    """Folder given by environment variable ``name``."""
-    if name not in os.environ:
+def env_path(name: str, fallback: str | None = None) -> Path:
+    """
+    Folder given by environment variable ``name``, or by ``fallback`` if
+    ``name`` is unset or empty.
+    """
+    value = os.environ.get(name, "").strip()
+    if not value and fallback is not None:
+        return env_path(fallback)
+    if not value:
         raise RuntimeError(f"{name} is not set; copy .env.example to .env "
                            "or export it in your shell")
-    return Path(os.environ[name]).expanduser()
+    return Path(value).expanduser()
 
 
 load_env()

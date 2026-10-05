@@ -44,8 +44,15 @@ def find_images(indir: Path, stem: str, image_format: str = "png") -> list[Path]
     return [p for _, p in sorted(found)]
 
 
-def make_video(images: list[Path], output, fps: float = 10, codec: str = "auto") -> Path:
-    """Encode ``images`` (same format and size), in order, into ``output``."""
+def make_video(images: list[Path], output, fps: float = 10, codec: str = "auto",
+               max_size: int | None = 4096) -> Path:
+    """
+    Encode ``images`` (same format and size), in order, into ``output``.
+
+    Frames larger than ``max_size`` pixels on either side are scaled down to
+    fit, keeping their aspect ratio (the encoders here fail above 4096); the
+    images themselves are not changed.  None keeps the full size.
+    """
     ffmpeg = shutil.which("ffmpeg")
     if ffmpeg is None:
         raise RuntimeError("ffmpeg not found; install it (e.g. sudo apt install ffmpeg)")
@@ -61,6 +68,13 @@ def make_video(images: list[Path], output, fps: float = 10, codec: str = "auto")
     else:
         candidates = [codec]
 
+    # Fit within max_size x max_size, then make width/height even: every
+    # player needs that for yuv420p.
+    scale = "scale=trunc(iw/2)*2:trunc(ih/2)*2"
+    if max_size:
+        scale = (f"scale='min(iw,{max_size})':'min(ih,{max_size})'"
+                 f":force_original_aspect_ratio=decrease,{scale}")
+
     # Link the images as 00000, 00001, ... so gaps in frame numbers don't matter.
     with tempfile.TemporaryDirectory() as tmp:
         for i, image in enumerate(images):
@@ -69,13 +83,16 @@ def make_video(images: list[Path], output, fps: float = 10, codec: str = "auto")
         for name in candidates:
             cmd = [ffmpeg, "-y", "-loglevel", "error", "-framerate", str(fps),
                    "-i", str(Path(tmp) / f"%05d.{image_format}"),
-                   # Even width/height and yuv420p, so every player can open it.
-                   "-vf", "scale=trunc(iw/2)*2:trunc(ih/2)*2", "-pix_fmt", "yuv420p",
+                   "-vf", scale, "-pix_fmt", "yuv420p",
                    *CODECS.get(name, ["-c:v", name]), str(output)]
             result = subprocess.run(cmd, capture_output=True, text=True)
             if result.returncode == 0:
                 return output
-            errors.append(f"{name}: {result.stderr.strip().splitlines()[-1:]}")
+            # ffmpeg's first error line names the cause; later ones only follow from it.
+            lines = result.stderr.strip().splitlines() or ["(no output)"]
+            errors.append(f"{name}: {lines[0]}")
+    if output.exists() and output.stat().st_size == 0:
+        output.unlink()  # failed encodes leave an empty file behind
     raise RuntimeError("ffmpeg failed with every encoder:\n  " + "\n  ".join(errors))
 
 
@@ -95,6 +112,10 @@ def main(argv=None):
     parser.add_argument("--run", default=config.RUN, choices=list(config.SIMULATIONS),
                         help="run of layout cells that name no run, for the default "
                              f"--indir (default: {config.RUN})")
+    parser.add_argument("--max-size", type=int, default=combined.get("video_max_size", 4096),
+                        help="scale frames down to at most this many pixels per side; "
+                             "0 keeps the full size (default: config.COMBINED"
+                             f"['video_max_size'] = {combined.get('video_max_size', 4096)})")
     parser.add_argument("--codec", default="auto",
                         help=f"ffmpeg encoder (default: first available of {list(CODECS)})")
     args = parser.parse_args(argv)
@@ -113,7 +134,7 @@ def main(argv=None):
         if not images:
             raise FileNotFoundError(f"no images {stem}.NNNNN.{args.format} in {indir}")
         out = make_video(images, args.output or indir / f"{stem}.mp4", fps=args.fps,
-                         codec=args.codec)
+                         codec=args.codec, max_size=args.max_size or None)
     except (FileNotFoundError, RuntimeError) as err:
         parser.error(str(err))
     print(f"video: {out}")

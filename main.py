@@ -2,7 +2,7 @@
 Entry point: plot the runs set up in config.py.
 
     python main.py                       # whatever config.MAIN switches on
-    python main.py --no-make-slices --frames 0:21:5 -c 4
+    python main.py --no-make-slices --frames 0:21:5 -w 4
     python main.py slices dens t_cool    # one task, with all its options
     python main.py combined --layout "dens,temp;pres,t_cool" --video
     python main.py video --fps 5
@@ -11,7 +11,7 @@ Without a command, config.MAIN decides what is made: the single-variable
 slices (make_slices), the combined figure (make_combined), its video
 (make_video), and whether PNGs are kept at all (save_png: if False, the
 slices are skipped and the combined images are deleted once in the video).  Each switch has a flag (--make-video / --no-make-video, ...);
---run, --frames and --cores are passed on to every task.  A command runs just
+--run, --frames and --workers are passed on to every task.  A command runs just
 that task: ``python main.py <slices|combined|video> --help`` lists its options.
 """
 
@@ -21,9 +21,11 @@ import sys
 if __package__:  # imported as vis_athenak.main
     from . import config
     from .plotting import combined, slice2d, video
+    from .plotting.slice2d import n_workers
 else:            # python main.py
     import config
     from plotting import combined, slice2d, video
+    from plotting.slice2d import n_workers
 
 COMMANDS = {"slices": slice2d.main, "combined": combined.main, "video": video.main}
 
@@ -50,8 +52,10 @@ def run_tasks(argv) -> None:
                         help=f"simulation (default: {config.RUN})")
     parser.add_argument("--frames", nargs="+",
                         help="frame numbers and/or ranges like 0:21:5 (default: all)")
-    parser.add_argument("-c", "--cores", type=int, default=1,
-                        help="frames plotted in parallel (default: 1)")
+    parser.add_argument("-w", "--workers", "-c", "--cores", dest="workers", type=int,
+                        default=n_workers(),
+                        help="parallel worker processes, 1 = serial "
+                             f"(default: config.N_WORKERS = {n_workers()})")
     args, extra = parser.parse_known_args(argv)
     if extra:
         parser.error(f"unrecognized arguments: {' '.join(extra)}; to pass options to "
@@ -64,7 +68,7 @@ def run_tasks(argv) -> None:
         parser.error("nothing to do: make_slices (or save_png), make_combined and "
                      "make_video are all off")
 
-    common = ["--run", args.run, "-c", str(args.cores)]
+    common = ["--run", args.run, "--workers", str(args.workers)]
     if args.frames:
         common += ["--frames", *args.frames]
 

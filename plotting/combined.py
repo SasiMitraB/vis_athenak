@@ -2,7 +2,7 @@
 Combined figure: a grid of slice panels per frame, laid out by config.COMBINED.
 
     python main.py combined                          # config.COMBINED["layout"]
-    python main.py combined --frames 0:21:5 -c 4 --video
+    python main.py combined --frames 0:21:5 -w 4 --video
     python main.py combined --layout "dens,temp;pres,t_cool"
     python main.py combined --layout "cbox_02Myr:temp,cbox_tabcool:temp"
 
@@ -36,7 +36,9 @@ else:  # run from the repo root
     from simulation_data import SimulationData
 
 from .quantities import available, dimension  # noqa: E402
-from .slice2d import parse_frames, slice_variable, time_title, unit_factor, var_settings  # noqa: E402
+from .slice2d import (  # noqa: E402
+    apply_fonts, n_workers, parse_frames, slice_variable, time_title, unit_factor, var_settings,
+)
 from .slices import draw_slice  # noqa: E402
 
 
@@ -114,6 +116,7 @@ def plot_combined(layout, frames: dict, params: dict, number: int, opts) -> Path
     Draw frame ``number`` for a normalized ``layout``; ``frames`` and ``params``
     map each run to its Frame and athinput params.  Returns the file written.
     """
+    apply_fonts()
     nrows, ncols = len(layout), len(layout[0])
     pw, ph = opts["panel_size"]
     fig, axes = plt.subplots(nrows, ncols, figsize=(pw * ncols, ph * nrows),
@@ -222,8 +225,10 @@ def main(argv=None):
     parser.add_argument("--panel-size", type=float, nargs=2, default=plot["panel_size"])
     parser.add_argument("--dpi", type=int, default=plot["dpi"])
     parser.add_argument("--format", default=plot["format"])
-    parser.add_argument("-c", "--cores", type=int, default=1,
-                        help="frames plotted in parallel (default: 1)")
+    parser.add_argument("-w", "--workers", "-c", "--cores", dest="workers", type=int,
+                        default=n_workers(),
+                        help="parallel worker processes, 1 = serial "
+                             f"(default: config.N_WORKERS = {n_workers()})")
     parser.add_argument("--video", action="store_true",
                         help="also make a video of the images (see python main.py video)")
     parser.add_argument("--save-png", action=argparse.BooleanOptionalAction, default=None,
@@ -287,8 +292,8 @@ def main(argv=None):
     print(f"plotting a {shape} layout of {runs} for {len(numbers)} frames -> {opts['outdir']}")
 
     written = []
-    if args.cores > 1:
-        with ProcessPoolExecutor(max_workers=args.cores) as pool:
+    if args.workers > 1 and len(jobs) > 1:
+        with ProcessPoolExecutor(max_workers=min(args.workers, len(jobs))) as pool:
             for n, path in zip(numbers, pool.map(_plot_combined_star, jobs)):
                 written.append(path)
                 print(f"  frame {n:5d}: {path.name}")

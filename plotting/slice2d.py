@@ -6,7 +6,7 @@ Run from the repo root as a module:
     python -m plotting.slice2d                         # config.PLOT_ORDER for config.RUN
     python -m plotting.slice2d dens temp --axis y --frames 0:21:5
     python -m plotting.slice2d temp --run cbox_tabcool # another entry of config.SIMULATIONS
-    python -m plotting.slice2d temp --vmin 1e4 --vmax 1e7 --cores 4
+    python -m plotting.slice2d temp --vmin 1e4 --vmax 1e7 --workers 4
     python -m plotting.slice2d --athinput run/cbox.athinput --datafolder run/bin --outdir plots
 
 Everything defaults to config.py: the run (SIMULATIONS, RUN; paths relative
@@ -18,6 +18,7 @@ and style (PLOT_VARS).  Flags override single values.  Images are written to
 from __future__ import annotations
 
 import argparse
+import logging
 from concurrent.futures import ProcessPoolExecutor
 from pathlib import Path
 
@@ -57,6 +58,34 @@ def parse_frames(tokens: list[str] | None):
     return numbers
 
 
+def apply_fonts() -> None:
+    """Set matplotlib's fonts from config.FONTS (run in every worker process)."""
+    # Fonts without a bold face (math symbol fonts) fall back to normal; don't warn.
+    logging.getLogger("matplotlib.font_manager").setLevel(logging.ERROR)
+    f = config.FONTS
+    bold = f["weight"] == "bold"
+    plt.rcParams.update({
+        "font.weight": f["weight"],
+        "axes.titleweight": f["weight"],
+        "axes.labelweight": f["weight"],
+        "figure.titleweight": f["weight"],
+        "mathtext.default": "bf" if bold else "it",
+        "axes.titlesize": f["title"],
+        "figure.titlesize": f["suptitle"],
+        "axes.labelsize": f["label"],
+        "xtick.labelsize": f["ticks"],
+        "ytick.labelsize": f["ticks"],
+    })
+
+
+def n_workers() -> int:
+    """config.N_WORKERS: parallel worker processes for plotting, 1 = serial."""
+    n = config.N_WORKERS
+    if isinstance(n, bool) or not isinstance(n, int) or n < 1:
+        raise SystemExit(f"config.py: N_WORKERS must be a whole number >= 1, got {n!r}")
+    return n
+
+
 def unit_factor(params: dict, dimension: str, unit: str) -> float:
     """Code -> ``unit`` factor; 1 for "code" even if the run has no <units>."""
     return 1.0 if unit == "code" else Units.from_params(params).factor(dimension, unit)
@@ -88,6 +117,7 @@ def time_title(frame, params: dict, opts: dict) -> str:
 
 def plot_frame(frame, variables, params, basename, opts) -> list[Path]:
     """Plot every variable of one frame; returns the files written."""
+    apply_fonts()
     written = []
     for name in variables:
         var = var_settings(name, opts)
@@ -148,8 +178,10 @@ def main(argv=None):
     parser.add_argument("--figsize", type=float, nargs=2, default=plot["fig_size_single"])
     parser.add_argument("--dpi", type=int, default=plot["dpi"])
     parser.add_argument("--format", default=plot["format"], help="image format")
-    parser.add_argument("-c", "--cores", type=int, default=1,
-                        help="frames plotted in parallel (default: 1)")
+    parser.add_argument("-w", "--workers", "-c", "--cores", dest="workers", type=int,
+                        default=n_workers(),
+                        help="parallel worker processes, 1 = serial "
+                             f"(default: config.N_WORKERS = {n_workers()})")
     args = parser.parse_args(argv)
 
     # Fill whatever was not given on the command line from config.SIMULATIONS.
@@ -202,8 +234,8 @@ def main(argv=None):
     jobs = [(f, args.variables, sim.params, sim.basename, opts) for f in frames]
     print(f"{sim}\nplotting {args.variables} for {len(frames)} frames -> {args.outdir}")
 
-    if args.cores > 1:
-        with ProcessPoolExecutor(max_workers=args.cores) as pool:
+    if args.workers > 1 and len(jobs) > 1:
+        with ProcessPoolExecutor(max_workers=min(args.workers, len(jobs))) as pool:
             for frame, written in zip(frames, pool.map(_plot_frame_star, jobs)):
                 print(f"  frame {frame.number:5d}: {len(written)} images")
     else:

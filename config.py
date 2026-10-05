@@ -26,6 +26,20 @@ if __package__:  # imported as vis_athenak.config
     from .utils.env import env_path
 else:            # run from the repo root
     from utils.env import env_path
+    
+# What `python main.py` (no command) makes; each switch can be flipped on the
+# command line, e.g. --no-make-slices or --save-png.
+MAIN = dict(
+    make_slices=True,    # one image per frame and variable in PLOT_ORDER
+    make_combined=True,  # one image per frame of COMBINED["layout"]
+    make_video=True,     # a video of the combined images
+    save_png=False,       # False: no slices, and the combined images are deleted once in the video
+)
+
+# Parallel worker processes for plotting frames (slices and combined figures);
+# 1 = serial.  Each worker holds one frame of every run it plots in memory, so
+# lower this for large runs.  -w/--workers overrides it for one run.
+N_WORKERS = 4
 
 RUN = "cbox_02Myr"  # default simulation
 
@@ -69,6 +83,15 @@ PLOT = dict(
     panel_size=(5.0, 4.5),  # combined figure: size of each panel
     dpi=150,
     format="png",
+)
+
+# Fonts of every figure (sizes in points).
+FONTS = dict(
+    weight="bold",  # "bold" or "normal"; also applies to math text such as 10^{-4}
+    title=14,       # panel titles (the variable labels)
+    suptitle=16,    # time at the top of the figure
+    label=12,       # axis labels
+    ticks=10,       # tick labels of axes and colorbars
 )
 
 # One entry per plottable variable; the key names the output folder and the
@@ -126,13 +149,13 @@ PLOT_VARS = {
 # Variables plotted when none are named on the command line.
 PLOT_ORDER = [
     "dens",
-    # "pres",
+    "pres",
     "temp",
     # "tracer",
     # "velx",
     # "vely",
     # "entropy",
-    # "t_cool",
+    "t_cool",
 ]
 
 # Combined figure (python main.py combined) and its video (python main.py video).
@@ -145,22 +168,13 @@ COMBINED = dict(
     name="combined",  # images <name>.<axis>.<NNNNN>.<format>, video <name>.<axis>.mp4
     layout=[
         ["dens", "temp"],
-        # ["pres", "t_cool"],
+        ["pres", "t_cool"],
     ],
     fps=24,           # video frames per second
 )
 # Comparing runs, one row per variable and one column per run:
 # COMBINED["layout"] = [[(run, var) for run in ["cbox_02Myr", "cbox_tabcool"]]
 #                       for var in ["dens", "temp"]]
-
-# What `python main.py` (no command) makes; each switch can be flipped on the
-# command line, e.g. --no-make-slices or --save-png.
-MAIN = dict(
-    make_slices=True,    # one image per frame and variable in PLOT_ORDER
-    make_combined=True,  # one image per frame of COMBINED["layout"]
-    make_video=True,     # a video of the combined images
-    save_png=False,       # False: no slices, and the combined images are deleted once in the video
-)
 
 
 def plot_var(name: str) -> dict:

@@ -7,6 +7,7 @@ from pathlib import Path
 import numpy as np
 
 from . import athdf
+from .device import Device, as_device, to_device
 from .field import Field
 from .readers import can_read_single_variable, read_file, read_time, read_variable_names
 
@@ -30,12 +31,16 @@ class Frame:
     If two outputs hold a variable of the same name (``dens`` in both
     ``hydro_w`` and ``hydro_u``), the first output's is ``fields["dens"]`` and
     the other is ``fields["hydro_u/dens"]``.
+
+    Fields are loaded as numpy arrays, or as cupy arrays on the GPU with
+    ``device="gpu"`` (here, or per call in ``load``).  The grid stays numpy.
     """
 
-    def __init__(self, number: int, paths: dict[str, Path], dtype=None):
+    def __init__(self, number: int, paths: dict[str, Path], dtype=None, device="cpu"):
         self.number = number
         self.paths = paths  # {output id: path to that output's file}
         self._dtype = dtype
+        self.device = as_device(device)  # where fields are loaded by default
         self._fields: dict[str, Field] | None = None
         self._grid: dict | None = None
         self._time: float | None = None
@@ -66,16 +71,22 @@ class Frame:
             self._fields = fields
         return self._fields
 
-    def load(self, fields) -> None:
+    def load(self, fields, device=None) -> None:
         """
         Read several fields (names or `Field`s) at once, one read per file,
-        instead of one read per field.  Fields already loaded are skipped.
+        instead of one read per field.  Fields already loaded are not read
+        again, only moved if ``device`` (``"cpu"``/``"gpu"``, default
+        ``self.device``) is given and differs.
         """
         fields = [self.fields[f] if isinstance(f, str) else f for f in fields]
+        explicit = device is not None
+        device = as_device(device) or self.device
         by_path: dict[Path, list[Field]] = {}
         for field in fields:
             if not field.is_loaded:
                 by_path.setdefault(field.path, []).append(field)
+            elif explicit:
+                field._data = to_device(field._data, device)
 
         for path, wanted in by_path.items():
             layout = self._athdf_layout(path)
@@ -84,7 +95,7 @@ class Frame:
                 data = athdf.read_variables(path, [f.name for f in wanted], layout,
                                             self._dtype)
                 for field in wanted:
-                    field._data = data[field.name]
+                    field._data = to_device(data[field.name], device)
                 continue
             if can_read_single_variable(path):
                 data = read_file(path, self._dtype, quantities=[f.name for f in wanted])
@@ -94,7 +105,7 @@ class Frame:
                 wanted = [f for f in self.fields.values() if f.path == path]
             for field in wanted:
                 if not field.is_loaded:
-                    field._data = data[field.name]
+                    field._data = to_device(data[field.name], device)
             self._keep_grid(data)
 
     def _athdf_layout(self, path: Path) -> athdf.AthdfLayout | None:
@@ -163,6 +174,9 @@ class Frame:
         if self._fields is None:
             state = "fields not read"
         else:
-            n = sum(f.is_loaded for f in self._fields.values())
+            n = sum(bool(f.is_loaded) for f in self._fields.values())
             state = f"{n}/{len(self._fields)} fields loaded"
+            on_gpu = sum(f.is_loaded is Device.GPU for f in self._fields.values())
+            if on_gpu:
+                state += f" ({on_gpu} on GPU)"
         return f"<Frame {self.number}  outputs={list(self.paths)}  {state}>"

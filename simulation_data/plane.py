@@ -31,6 +31,7 @@ from pathlib import Path
 import numpy as np
 
 from . import athdf
+from .device import Device, array_module, as_device, device_of, to_device
 from .readers import RANK0_DIR
 
 # Slice normal -> array axis of (nx3, nx2, nx1) arrays, and the in-plane
@@ -274,16 +275,23 @@ class FramePlane:
 
     Nothing is read when it is created.  ``index``, ``x`` and ``y`` need only
     the file headers; ``plane[name]`` reads that field's slice on first use
-    and caches it.  Fields the frame already holds in memory are sliced from
-    there instead of being read again.
+    and caches it.  Fields the frame already holds in memory (on the CPU or
+    the GPU) are sliced from there instead of being read again.
+
+    Slices are numpy arrays, or cupy arrays with ``device="gpu"`` (default:
+    the frame's device).  ``plane.is_loaded(name)`` gives ``Device.CPU``,
+    ``Device.GPU`` or ``Device.NOT_LOADED`` (falsy); ``to_gpu()`` and
+    ``to_cpu()`` move the cached slices.  The coordinates stay numpy.
     """
 
-    def __init__(self, frame, axis: str = "z", position: float | None = None):
+    def __init__(self, frame, axis: str = "z", position: float | None = None,
+                 device=None):
         if axis not in AXES:
             raise ValueError(f"axis must be one of {list(AXES)}, got {axis!r}")
         self.frame, self.axis, self.position = frame, axis, position
+        self.device = as_device(device) or frame.device  # where slices are put
         self._cut, self._h, self._v = AXES[axis]
-        self._planes: dict[str, np.ndarray] = {}
+        self._planes: dict = {}  # name -> numpy or cupy array
         self._bin_layouts: dict[Path, BinLayout] = {}
         self._grid: dict | None = None
         self._index: int | None = None
@@ -351,8 +359,15 @@ class FramePlane:
 
     # ── Fields ───────────────────────────────────────────────────────────
 
-    def load(self, names) -> None:
-        """Read the slices of several fields, one pass per file."""
+    def load(self, names, device=None) -> None:
+        """
+        Read the slices of several fields, one pass per file.  Slices already
+        read are not read again, only moved if ``device`` is given and differs.
+        """
+        names = list(names)
+        if device is not None:
+            self.to(device, [n for n in names if n in self._planes])
+        device = as_device(device) or self.device
         wanted = [n for n in names if n not in self._planes]
         unknown = [n for n in wanted if n not in self.frame.fields]
         if unknown:
@@ -363,7 +378,9 @@ class FramePlane:
         for key in wanted:
             field = self.frame.fields[key]
             if field.is_loaded:  # already in memory: just slice it
-                self._planes[key] = np.take(field.data, self.index, axis=self._cut)
+                xp = array_module(field.data)
+                plane = xp.take(field.data, self.index, axis=self._cut)
+                self._planes[key] = to_device(plane, device)
             else:
                 by_path.setdefault(field.path, []).append(key)
 
@@ -371,7 +388,7 @@ class FramePlane:
             names_in_file = [self.frame.fields[k].name for k in keys]
             planes = self._read(path, names_in_file)
             for key, name in zip(keys, names_in_file):
-                self._planes[key] = planes[name]
+                self._planes[key] = to_device(planes[name], device)
 
     def _read(self, path: Path, names: list[str]) -> dict[str, np.ndarray]:
         dtype = self.frame._dtype
@@ -383,9 +400,31 @@ class FramePlane:
             return read_athdf_plane(path, athdf_layout, names, self._cut, self.index, dtype)
         # Anything else: read the whole fields and slice them.
         keys = {f.name: k for k, f in self.frame.fields.items() if f.path == path}
-        return {n: np.take(self.frame[keys[n]], self.index, axis=self._cut) for n in names}
+        full = {n: self.frame[keys[n]] for n in names}
+        return {n: array_module(a).take(a, self.index, axis=self._cut)
+                for n, a in full.items()}
 
-    def __getitem__(self, name: str) -> np.ndarray:
+    def is_loaded(self, name: str) -> Device:
+        """Where the slice of ``name`` is held, ``Device.NOT_LOADED`` if not read."""
+        return device_of(self._planes.get(name))
+
+    def to(self, device, names=None) -> FramePlane:
+        """
+        Move cached slices (all, or ``names``) to ``"cpu"`` or ``"gpu"``.
+        Slices not read yet are left alone; use ``load(names, device)``.
+        """
+        for name in self._planes if names is None else names:
+            if name in self._planes:
+                self._planes[name] = to_device(self._planes[name], device)
+        return self
+
+    def to_gpu(self, names=None) -> FramePlane:
+        return self.to(Device.GPU, names)
+
+    def to_cpu(self, names=None) -> FramePlane:
+        return self.to(Device.CPU, names)
+
+    def __getitem__(self, name: str):
         if name in self.frame.fields:
             if name not in self._planes:
                 self.load([name])
@@ -401,5 +440,7 @@ class FramePlane:
 
     def __repr__(self) -> str:
         where = "midplane" if self.position is None else f"{self.position}"
+        on_gpu = sum(device_of(p) is Device.GPU for p in self._planes.values())
+        gpu = f" ({on_gpu} on GPU)" if on_gpu else ""
         return (f"<FramePlane {self.axis} = {where} of frame {self.frame.number}  "
-                f"{len(self._planes)} fields read>")
+                f"{len(self._planes)} fields read{gpu}>")

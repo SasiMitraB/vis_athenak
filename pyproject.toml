@@ -19,6 +19,9 @@ plot = [
     "matplotlib>=3.7",
     "scipy>=1.10",
 ]
+gpu = [
+    "cupy-cuda13x",  # match the CUDA major version of the driver; needs a CUDA toolkit (CUDA_PATH)
+]
 
 [project.scripts]
 # `vis_athenak [command] [options]` = `python main.py [command] [options]`

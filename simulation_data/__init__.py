@@ -24,6 +24,7 @@ readers          read_time / read_variable_names / read_file: one output file ->
                  header time / variable names / arrays
 frame            Frame: one lazily loaded snapshot
 field            Field: one lazily loaded variable of a Frame
+device           Device: where a field is held (CPU numpy / GPU cupy / not loaded)
 athdf            fast reads of single variables from .athdf files
 simulation_data  SimulationData: discovers the frames of a run
 
@@ -33,8 +34,9 @@ Run as a module to print a summary of a run:
 """
 
 from .athinput import parse_athinput
+from .device import Device
 from .field import Field
 from .frame import Frame
 from .simulation_data import SimulationData
 
-__all__ = ["Field", "Frame", "SimulationData", "parse_athinput"]
+__all__ = ["Device", "Field", "Frame", "SimulationData", "parse_athinput"]

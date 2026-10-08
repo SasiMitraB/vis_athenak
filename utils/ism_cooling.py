@@ -2,16 +2,22 @@
 
 import numpy as np
 
+if __package__ and "." in __package__:  # imported as vis_athenak.utils
+    from ..simulation_data.device import array_module
+else:  # run from the repo root
+    from simulation_data.device import array_module
+
 def ISMCoolFn(temp):
     """
     Vectorized ISM cooling function.
     `temp` can be a scalar, NumPy array (any shape), or something convertible to an array.
-    Returns an array of the same shape as `temp`.
+    Returns an array of the same shape as `temp`, on the GPU if `temp` is a cupy array.
     """
 
-    temp = np.asarray(temp, dtype=float)
+    xp = array_module(temp)
+    temp = xp.asarray(temp, dtype=float)
 
-    lhd = np.array([
+    lhd = xp.asarray([
         -22.5977, -21.9689, -21.5972, -21.4615, -21.4789, -21.5497, -21.6211, -21.6595,
         -21.6426, -21.5688, -21.4771, -21.3755, -21.2693, -21.1644, -21.0658, -20.9778,
         -20.8986, -20.8281, -20.7700, -20.7223, -20.6888, -20.6739, -20.6815, -20.7051,
@@ -27,10 +33,10 @@ def ISMCoolFn(temp):
         -22.4695, -22.4543, -22.4392, -22.4237, -22.4087, -22.3928
     ])
 
-    logt = np.log10(temp)
+    logt = xp.log10(temp)
 
     # Initialize result array
-    Lambda = np.zeros_like(logt, dtype=float)
+    Lambda = xp.zeros_like(logt, dtype=float)
 
     # Region 1: logT <= 4.2 -> 0 Lambda(10^4.2)
     mask_low = logt <= 4.2
@@ -49,11 +55,11 @@ def ISMCoolFn(temp):
 
     # Region 3: 4.2 < logT <= 8.15 -> table + interpolation
     mask_mid = (logt > 4.2) & (logt <= 8.15)
-    if np.any(mask_mid):
+    if xp.any(mask_mid):
         logt_mid = logt[mask_mid]
 
         ipps = (25.0 * logt_mid).astype(int) - 103
-        ipps = np.clip(ipps, 0, 100)
+        ipps = xp.clip(ipps, 0, 100)
 
         x0 = 4.12 + 0.04 * ipps.astype(float)
         dx = logt_mid - x0

@@ -33,6 +33,10 @@ class SimulationData:
         bin block with the same cadence.
     dtype : numpy dtype, optional
         dtype of the loaded field arrays (the readers default to float32).
+    device : {"cpu", "gpu"}, optional
+        Where fields are loaded: numpy arrays (default) or cupy arrays on the
+        GPU.  Individual frames and fields can still be moved with
+        ``frame.load(..., device=...)`` and ``field.to_gpu()``/``to_cpu()``.
 
     Indexing is positional like a list: ``sim[0]``, ``sim[-1]``, ``sim[2:5]``.
     ``frame.number`` is the file number, which differs after restarts or if
@@ -45,6 +49,7 @@ class SimulationData:
         datafolder: str | Path,
         outputs: list[str] | None = None,
         dtype=None,
+        device="cpu",
     ):
         self.athinput = Path(athinput)
         self.datafolder = Path(datafolder)
@@ -57,7 +62,7 @@ class SimulationData:
             raise ValueError(f"no <job> basename in {self.athinput}")
 
         self.outputs = self._select_outputs(outputs)
-        self._frames = self._discover_frames(dtype)
+        self._frames = self._discover_frames(dtype, device)
         self._times: np.ndarray | None = None
 
     # ── Discovery ────────────────────────────────────────────────────────
@@ -123,7 +128,7 @@ class SimulationData:
                 return found
         return {}
 
-    def _discover_frames(self, dtype) -> list[Frame]:
+    def _discover_frames(self, dtype, device) -> list[Frame]:
         files = {o: self._find_files(o) for o in self.outputs}
         missing = [o for o, found in files.items() if not found]
         if missing:
@@ -135,7 +140,7 @@ class SimulationData:
         # Keep only frame numbers present for every output.
         numbers = sorted(set.intersection(*(set(f) for f in files.values())))
         return [
-            Frame(n, {o: files[o][n] for o in self.outputs}, dtype=dtype)
+            Frame(n, {o: files[o][n] for o in self.outputs}, dtype=dtype, device=device)
             for n in numbers
         ]
 

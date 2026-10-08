@@ -39,7 +39,7 @@ Field, parse_athinput`) and run from the repo root, since `readers.py` imports
 ## SimulationData
 
 ```python
-SimulationData(athinput, datafolder, outputs=None, dtype=None)
+SimulationData(athinput, datafolder, outputs=None, dtype=None, device="cpu")
 ```
 
 | | |
@@ -88,6 +88,7 @@ cached until you call `frame.unload()`.
 | `frame.fields` | `{name: Field}` for every variable in the frame's files, from the file headers only |
 | `frame["dens"]` | shorthand for `frame.fields["dens"].data`: the array, shape `(nx3, nx2, nx1)` |
 | `frame.load(["dens", "mom1"])` | read several fields with one read per file (faster than one at a time, see below) |
+| `frame.load(names, device="gpu")` | the same, onto the GPU; already loaded fields are moved |
 | `frame["x1v"]`, `frame.grid` | coordinates (`x1f`, `x1v`, …) and file attributes (`Time`, `NumCycles`, …) |
 | `frame.keys()`, `"bcc1" in frame` | field and grid names (reads the grid if a name isn't a field) |
 | `frame.time` | simulation time; reads only the header if the grid isn't loaded |
@@ -100,7 +101,9 @@ cached until you call `frame.unload()`.
 | | |
 |---|---|
 | `field.data` | the array, read on first access |
-| `field.is_loaded`, `field.unload()` | whether it's in memory; drop it |
+| `field.is_loaded` | `Device.CPU`, `Device.GPU` or `Device.NOT_LOADED` (falsy, so `if field.is_loaded:` still works) |
+| `field.to_gpu()`, `field.to_cpu()`, `field.to("gpu")` | move the array (reads it first if needed) |
+| `field.unload()` | drop it |
 | `field.name`, `field.output`, `field.path` | variable name, output id, file it's read from |
 | `np.log10(field)` | a `Field` works directly with numpy |
 
@@ -121,6 +124,28 @@ Variable names are AthenaK's own (`dens`, `velx`, `eint`, `mom1`, `ener`,
 `bcc1`, `s_00`, …). No renaming or derived fields are added yet. Arrays are
 float32 unless you pass `dtype=np.float64`. Frames loaded from `.athdf` also
 contain the file's HDF5 attributes (`RootGridSize`, `VariableNames`, …).
+
+### GPU arrays
+
+With [cupy](https://cupy.dev) installed (`pip install -e .[gpu]`, for CUDA 13
+drivers; use `cupy-cuda12x` on CUDA 12), fields can
+live on the GPU as cupy arrays: pass `device="gpu"` to `SimulationData` (or
+`Frame`) to load every field there, or move single fields with
+`field.to_gpu()` / `field.to_cpu()`. The files are still read on the CPU and
+then copied over. The grid (`x1f`, `Time`, …) stays numpy. `np.asarray(field)`
+always gives a numpy array, copying back from the GPU if needed; `field.data`
+gives the array where it is.
+
+`FramePlane(frame, axis, position, device=None)` puts its slices on the
+frame's device unless told otherwise. `plane.is_loaded("dens")` returns a
+`Device`, and `plane.to_gpu()` / `plane.to_cpu()` move the cached slices.
+`draw_slice` accepts GPU slices, and the derived quantities in
+`plotting/quantities.py` stay on the GPU when their inputs are cupy arrays.
+
+cupy compiles its kernels at runtime and needs the CUDA toolkit headers. If
+the toolkit is not at `/usr/local/cuda`, point `CUDA_PATH` at it (e.g.
+`export CUDA_PATH=/usr/local/cuda-13.3`), or the first GPU operation fails
+with "Failed to find CUDA headers".
 
 ## Not supported yet
 

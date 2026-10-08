@@ -21,8 +21,10 @@ import numpy as np
 from matplotlib import colors
 
 if "." in __package__:  # imported as vis_athenak.plotting
+    from ..simulation_data.device import to_numpy
     from ..simulation_data.plane import FramePlane as Plane
 else:  # run from the repo root
+    from simulation_data.device import to_numpy
     from simulation_data.plane import FramePlane as Plane
 
 __all__ = ["AXIS_LABELS", "Plane", "draw_slice", "slice_index", "take_slice"]
@@ -93,8 +95,10 @@ def draw_slice(ax, x, y, data, cmap="viridis", norm=None, vmin=None, vmax=None,
     ``norm`` is "log" (non-positive values masked) or None/"linear".
     ``length_units`` is only used in the axis labels; scale ``x`` and ``y``
     to match.  Uniform grids are drawn with imshow (one image, fast); other
-    grids with pcolormesh (one quad per cell).
+    grids with pcolormesh (one quad per cell).  GPU (cupy) data is copied
+    to the CPU first.
     """
+    data = to_numpy(data)
     if norm == "log":
         data = np.ma.masked_less_equal(data, 0)
         mpl_norm = colors.LogNorm(vmin=vmin, vmax=vmax)

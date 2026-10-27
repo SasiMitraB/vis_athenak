@@ -219,6 +219,10 @@ PARTICLES = dict(
     bins=[1.0e5],       # edges in the colour's units; n_track is split evenly over
                         # the bins (here half below 1e5 K, half above); None = random
     tags=None,          # or exactly these tags, e.g. [12, 503, 9981]
+    require=None,       # history conditions on the colour quantity, "FILE:LO:HI" with FILE
+                        # a particle file number, first, last or last-N; LO/HI may be empty.
+                        # Condensing gas (hot at the start, cold at the end):
+                        #   require=["first:1e6:", "last::2e4"]
     select_at=None,     # particle file number where they are picked; None = first frame
     region=None,        # pick only inside, in length_units: dict(x=(-1, 1), y=(0, None))
     seed=0,             # random picks are reproducible; change for another set

@@ -200,7 +200,72 @@ def domain(params: dict) -> dict:
 
 # ── Selection ────────────────────────────────────────────────────────────
 
-def select_tags(pf, params: dict, opts: dict, color: dict | None) -> tuple[np.ndarray, str]:
+def parse_require(text: str):
+    """
+    'first:1e6:' -> (0, 1e6, None), 'last::2e4' -> (-1, None, 2e4), '120:1e5:1e6'
+    -> (120, ...): the colour must lie in [lo, hi) in that particle file.  FILE is
+    a file number, first, last, or last-N; inside the program negative numbers
+    count from the end of the movie's files.
+    """
+    parts = str(text).split(":")
+    try:
+        if len(parts) != 3:
+            raise ValueError
+        where = parts[0].strip().lower()
+        if where == "first":
+            file = "first"
+        elif where == "last":
+            file = -1
+        elif where.startswith("last-"):
+            file = -1 - int(where[5:])
+        else:
+            file = int(where)
+        lo = float(parts[1]) if parts[1] else None
+        hi = float(parts[2]) if parts[2] else None
+    except ValueError:
+        raise argparse.ArgumentTypeError(
+            f"{text!r}: expected FILE:LO:HI with FILE a number, first, last or last-N, "
+            "e.g. first:1e6: or last::2e4") from None
+    return (file, lo, hi)
+
+
+def apply_requirements(candidate_tags, requirements, files, params, opts, color):
+    """
+    Keep the tags whose colour quantity lies in [lo, hi) in each required file;
+    ``requirements`` is [(file, lo, hi)], file a particle file number, or a
+    negative index into the movie's files (-1 = last).  A particle missing from
+    a required file fails that requirement.  Returns (tags, descriptions).
+    """
+    if color is None:
+        raise SystemExit("require needs a colour quantity (PARTICLES['color'] / --color)")
+    by_number = {f.number: f for f in files}
+    notes = []
+    for file, lo, hi in requirements:
+        pf = (files[0] if file == "first" else files[file] if file < 0
+              else by_number.get(file))
+        if pf is None:
+            raise SystemExit(f"require: particle file {file} is not among the movie's files "
+                             f"({files[0].number}..{files[-1].number})")
+        tags = pf.tags()
+        values = particle_quantity(ParticleView(pf, None, params, opts["stored_units"]),
+                                   color["quantity"], color["units"])
+        ok = np.ones(tags.size, dtype=bool)
+        if lo is not None:
+            ok &= values >= lo
+        if hi is not None:
+            ok &= values < hi
+        before = candidate_tags.size
+        candidate_tags = candidate_tags[np.isin(candidate_tags, tags[ok])]
+        u = "" if color["units"] == "code" else f" {color['units']}"
+        span = (f">= {lo:g}{u}" if hi is None else f"< {hi:g}{u}" if lo is None
+                else f"{lo:g}-{hi:g}{u}")
+        notes.append(f"{color['quantity']} {span} in file {pf.number} "
+                     f"({candidate_tags.size} of {before} left)")
+    return candidate_tags, notes
+
+
+def select_tags(pf, params: dict, opts: dict, color: dict | None,
+                files=None) -> tuple[np.ndarray, str]:
     """Tags to track, picked in file ``pf``; and a line describing the choice."""
     rng = np.random.default_rng(opts["seed"])
     if opts["tags"]:
@@ -226,11 +291,22 @@ def select_tags(pf, params: dict, opts: dict, color: dict | None) -> tuple[np.nd
         if not candidates.size:
             raise SystemExit(f"no particles inside region {region} in file {pf.number}")
 
+    req_notes = []
+    if opts.get("require"):
+        kept, req_notes = apply_requirements(all_tags[candidates], opts["require"], files,
+                                             params, opts, color)
+        candidates = candidates[np.isin(all_tags[candidates], kept)]
+        print("requirements: " + "; ".join(req_notes))
+        if not candidates.size:
+            raise SystemExit("no particles meet every requirement; loosen the limits or "
+                             "choose other files")
+
     n = opts["n_track"]
     bins = opts.get("bins")
     if not bins:
         pick = rng.choice(candidates, size=min(n, candidates.size), replace=False)
-        return np.sort(all_tags[pick]), f"{len(pick)} random particles"
+        how = "particles meeting the requirements" if req_notes else "random particles"
+        return np.sort(all_tags[pick]), f"{len(pick)} {how}"
 
     if color is None:
         print("note: no colour quantity, so the bins are ignored and the picks are random")
@@ -527,6 +603,13 @@ def main(argv=None):
     parser.add_argument("--bins", type=float, nargs="*", default=P.get("bins"),
                         help="edges in the colour's units: --n is split evenly over the "
                              f"bins (default: {P.get('bins')}); none = random")
+    parser.add_argument("--require", type=parse_require, nargs="+",
+                        default=[parse_require(r) if isinstance(r, str) else tuple(r)
+                                 for r in (P.get("require") or [])] or None,
+                        metavar="FILE:LO:HI",
+                        help="only particles whose colour is in [LO, HI) in particle file "
+                             "FILE (a number, first, last or last-N); e.g. condensing gas: "
+                             "--require first:1e6: last::2e4 (hot at the start, cold at the end)")
     parser.add_argument("--select-at", type=int, default=P.get("select_at"),
                         help="particle file number to pick them in (default: first frame)")
     parser.add_argument("--seed", type=int, default=P.get("seed", 0))
@@ -649,7 +732,7 @@ def main(argv=None):
             parser.error(f"colour {color_name}: {err}")
     stored = dict(P.get("stored_units") or {})
     opts = dict(tags=args.tags, n_track=args.n_track, bins=args.bins, seed=args.seed,
-                region=P.get("region"), length_units=args.length_units,
+                region=P.get("region"), require=args.require, length_units=args.length_units,
                 stored_units=stored, rdata_names=rdata, idata_names=idata,
                 refresh=args.refresh)
 
@@ -660,7 +743,7 @@ def main(argv=None):
     if args.select_at is not None and args.select_at not in by_number:
         parser.error(f"--select-at {args.select_at}: no such particle file")
     try:
-        tracked, described = select_tags(select_file, params, opts, color)
+        tracked, described = select_tags(select_file, params, opts, color, files)
     except KeyError as err:
         parser.error(str(err))
     extra = background_tags(select_file, args.background, tracked, args.seed)

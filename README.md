@@ -190,6 +190,7 @@ box.
    python main.py particles --run myrun                     # config.PARTICLES
    python main.py particles --n 20 --bins 2e4 3e5           # 20 split over 3 T bins
    python main.py particles --tags 12 503 9981 --trail -1   # these, whole history
+   python main.py particles --require first:1e6: last::2e4 --bins --trail -1   # gas that condenses
    python main.py particles --gas temp --background 20000   # over a T slice, with a cloud
    python main.py particles --frames 0:1000:2 --fps 30 -w 8
    ```

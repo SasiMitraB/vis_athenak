@@ -33,7 +33,7 @@ else:            # run from the repo root
 MAIN = dict(
     make_slices=True,    # one image per frame and variable in PLOT_ORDER
     make_combined=True,  # one image per frame of COMBINED["layout"]
-    make_video=True,     # a video of the combined images
+    make_video=False,     # a video of the combined images
     save_png=False,       # False: no slices, and the combined images are deleted once in the video
 )
 
@@ -42,13 +42,13 @@ MAIN = dict(
 # lower this for large runs.  -w/--workers overrides it for one run.
 N_WORKERS = 2
 
-RUN = "tcgm_tvw"  # default simulation
+RUN = "clumps"  # default simulation
 
 SIMULATIONS = {
-    "tcgm_tvw": dict(
-        athinput="wind_outflow/wind_outflow_tcgm_tmdot_tvw.athinput",          # relative to $ATHINPUT_DIR
-        data="build_wind_outflow_tcgm_tmdot_tvw/src/tcgm13_tmdot31_vw2_100Myr_2d/bin",       # relative to $DATA_DIR
-        out="build_wind_outflow_tcgm_tmdot_tvw/src/tcgm13_tmdot31_vw2_100Myr_2d/plots",  # relative to $DATA_DIR
+    "clumps": dict(
+        athinput="X_ray_H_alpha_test.athinput",          # relative to $ATHINPUT_DIR
+        data="bin",       # relative to $DATA_DIR
+        out="plots",  # relative to $DATA_DIR
         outputs=None,  # output ids, e.g. ["hydro_w"]; None = auto (see SimulationData)
         frames=None,   # frame numbers, e.g. range(0, 21, 5); None = all
     ),
@@ -155,7 +155,7 @@ PLOT_ORDER = [
     # "pres",
     "temp",
     # "tracer",
-    "velx",
+    #"velx",
     "vely",
     # "entropy",
     # "t_cool",
@@ -172,7 +172,7 @@ COMBINED = dict(
     layout=[
         ["dens"],
         ["temp"],
-        ["velx"],
+        # ["velx"],
         ["vely"],
     ],
     fps=24,           # video frames per second

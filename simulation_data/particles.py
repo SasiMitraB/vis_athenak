@@ -57,6 +57,7 @@ class ParticleFile:
         self._idata_names = tuple(idata_names)
         self._columns: dict[str, tuple[int, str]] | None = None  # name -> (offset, dtype)
         self._n = 0
+        self.trailing = 0  # bytes after the data the header describes (see _read_prtclbin_header)
         self._time = np.nan
         self._cycle = -1
 
@@ -98,11 +99,15 @@ class ParticleFile:
             offset += 8 * n
 
         size = self.path.stat().st_size
-        if size != offset:
+        if size < offset:
             raise ValueError(
                 f"{self.path}: {size} bytes, but its header ({n} particles, {nr} real, "
                 f"{ni} integer, {ng} grid columns) implies {offset}; the file is "
                 "truncated or not in the format read_prtcl_bin.py describes")
+        # A file longer than its header says (e.g. rewritten by a restart without
+        # being shortened first) is read from the start; ParticleData.validate()
+        # reports it, and callers can check the data before trusting it.
+        self.trailing = size - offset
         self._columns = columns
 
     def _read_pvtk_header(self) -> None:
@@ -299,6 +304,29 @@ class ParticleData:
             for name in names:
                 out[name][i] = values[name]
         return out
+
+    def validate(self, drop: bool = False):
+        """
+        Read every file's header and check its size.  Returns
+        ``(unreadable, trailing)``: ``[(file, message)]`` for files that cannot
+        be read (truncated, wrong format), and ``[(file, extra_bytes)]`` for
+        files longer than their header says.  With ``drop=True`` the
+        unreadable files are removed from this ParticleData.
+        """
+        unreadable, trailing, good = [], [], []
+        for pf in self.files:
+            try:
+                pf.n
+            except (ValueError, OSError) as err:
+                unreadable.append((pf, str(err)))
+                continue
+            good.append(pf)
+            if pf.trailing:
+                trailing.append((pf, pf.trailing))
+        if drop and unreadable:
+            self.files = good
+            self._times = None
+        return unreadable, trailing
 
     def __repr__(self) -> str:
         return f"<ParticleData  {self.stem}.NNNNN.{self.ext}  n_files={len(self)}>"

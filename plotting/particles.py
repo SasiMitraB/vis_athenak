@@ -431,6 +431,29 @@ def draw_frame(job) -> Path:
 
 # ── Info ─────────────────────────────────────────────────────────────────
 
+def report_files(pdata: ParticleData) -> None:
+    """Drop unreadable particle files (with a message) and report oversized ones."""
+    unreadable, trailing = pdata.validate(drop=True)
+    for pf, message in unreadable:
+        print(f"WARNING: skipping {pf.path.name}: {message}")
+    if trailing:
+        names = ", ".join(f"{pf.path.name} (+{extra} B)" for pf, extra in trailing[:5])
+        more = f" and {len(trailing) - 5} more" if len(trailing) > 5 else ""
+        print(f"WARNING: {len(trailing)} file(s) are longer than their header says: {names}"
+              f"{more}.  The data the header describes is read and the extra bytes at the end "
+              "are ignored (typical when a restart rewrote a file without shortening it).")
+        first = pdata[0]
+        ref = first.tags()
+        for pf, _ in trailing[:5]:
+            tags = pf.tags()
+            ok = (np.unique(tags).size == tags.size and tags.min() >= 0
+                  and tags.max() <= 10 * max(int(ref.max()), 1))
+            print(f"  check {pf.path.name}: {tags.size} tags, "
+                  f"{'unique, in the same range as the first file' if ok else 'NOT sane (duplicates or out of range): do not trust this file'}")
+    if not len(pdata):
+        raise SystemExit("no readable particle files")
+
+
 def print_info(pdata: ParticleData, params: dict) -> None:
     """Summary of the particle files, to check columns, units and positions."""
     first, last = pdata[0], pdata[-1]
@@ -591,6 +614,7 @@ def main(argv=None):
     except (FileNotFoundError, ValueError) as err:
         parser.error(f"{err}\n  set 'particles' in config.SIMULATIONS['{args.run}'] "
                      "or pass --particles")
+    report_files(pdata)
     if args.info:
         print_info(pdata, params)
         return

@@ -4,19 +4,22 @@ Visualization and analysis tools for AthenaK simulation outputs.
 Developed by the IISc Computational Astrophysics group.
 
 ## Project structure
-- `main.py` — entry point (also the `vis_athenak` command after `pip install -e .`); with no command runs the tasks switched on in `config.MAIN`, or one task: `slices`, `combined`, `video`
-- `config.py` — all per-run settings: `RUN` / `SIMULATIONS` (paths relative to `.env` roots, resolved by `config.resolve()`), `PLOT`, `FONTS`, `PLOT_VARS`, `PLOT_ORDER`, `COMBINED` (panel grid + video), `MAIN` (task switches), `N_WORKERS`
+- `main.py` — entry point (also the `vis_athenak` command after `pip install -e .`); with no command runs the tasks switched on in `config.MAIN`, or one task: `slices`, `combined`, `video`, `particles`
+- `config.py` — all per-run settings: `RUN` / `SIMULATIONS` (paths relative to `.env` roots, resolved by `config.resolve()`), `PLOT`, `FONTS`, `PLOT_VARS`, `PLOT_ORDER`, `COMBINED` (panel grid + video), `PARTICLES` (particle movies), `MAIN` (task switches), `N_WORKERS`; a SIMULATIONS entry may give `particles` (folder of particle files)
 - `.env` (gitignored; template `.env.example`) — machine-specific `ATHENAK_DIR`, `ATHINPUT_DIR`, optional `DATA_DIR` (root of run outputs, defaults to `ATHENAK_DIR`), `CONDA_ENV`; read by `utils/env.py` on every run (`.envrc` takes only `CONDA_ENV` from it)
 - `simulation_data/` — `SimulationData` / `Frame` / `Field`: lazy, frame-by-frame access to a run (athinput + output folder); plotting and utils build on these classes
+  - `particles.py` — `ParticleData` / `ParticleFile`: particle outputs (`.prtclbin` from the group's AthenaK, `.part.vtk` from upstream `pvtk`), memory-mapped per column; particles change order between files (rank migration) and vanish at outflow boundaries, so always match by `tag` (`ParticleFile.find`, `ParticleData.track`)
   - `plane.py` — `FramePlane`: lazy 2D slice of a frame reading only the crossing meshblocks (`BinLayout` scans .bin block headers; .athdf uses `AthdfLayout` + h5py selections); result equals `np.take` of the full field; rank-split .bin, ghost zones and AthenaK slice/sum outputs fall back to full reads
 - `plotting/`
   - `quantities.py` — `get(frame, name, params, units)`; raw variables plus derived ones in `DERIVED`, each with a dimension for unit conversion
   - `slices.py` — `Plane` (= `simulation_data.plane.FramePlane`), `take_slice` (slices an already computed array), `draw_slice` (imshow for uniform grids, pcolormesh otherwise); no config
   - `slice2d.py` — single-variable images; also the shared helpers (`var_settings`, `slice_variable`, `time_title`, `apply_fonts`, `n_workers`, `parse_frames`)
   - `combined.py` — multi-panel image per frame from `COMBINED["layout"]`
+  - `particles.py` — particle movies: tag selection (random / per colour bin / region), trajectories gathered in parallel and cached as `<name>.tracks.npz`, trails broken at periodic boundaries (from the athinput `<mesh>` BCs), optional gas slice from the grid output nearest in time; `ParticleView` lets `quantities.get` derive quantities from the sampled grid fields
   - `video.py` — ffmpeg mp4 from numbered images (libx264, else h264_nvenc, else mpeg4)
 - `utils/` — `units.py` (code → cgs/display units, `UNIT_NAMES`), `env.py` (`.env` loading via python-dotenv), `ism_cooling.py` (`ISMCoolFn`)
 - `data_processing/` — AthenaK's raw readers/converters (`athena_read.py`, `bin_convert.py`), `make_athdf_fast.py`, `read_prtcl_bin.py` (particle `.prtclbin` reader); `plot_slice.py` is AthenaK's legacy plotter, superseded by `plotting/`
+- `test/test_particles.py` — self-contained check of the particle reader and tag matching
 - `test/test_simulation_data.py` — walkthrough of the SimulationData API on a real run
 
 ## Related work

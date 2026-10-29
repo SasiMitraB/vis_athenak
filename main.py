@@ -6,13 +6,15 @@ Entry point: plot the runs set up in config.py.
     python main.py slices dens t_cool    # one task, with all its options
     python main.py combined --layout "dens,temp;pres,t_cool" --video
     python main.py video --fps 5
+    python main.py particles --info      # particle movies: config.PARTICLES
+    python main.py particles --n 20 --gas temp
 
 Without a command, config.MAIN decides what is made: the single-variable
 slices (make_slices), the combined figure (make_combined), its video
-(make_video), and whether PNGs are kept at all (save_png: if False, the
+(make_video), a particle movie (make_particles), and whether PNGs are kept at all (save_png: if False, the
 slices are skipped and the combined images are deleted once in the video).  Each switch has a flag (--make-video / --no-make-video, ...);
 --run, --frames and --workers are passed on to every task.  A command runs just
-that task: ``python main.py <slices|combined|video> --help`` lists its options.
+that task: ``python main.py <slices|combined|video|particles> --help`` lists its options.
 """
 
 import argparse
@@ -20,14 +22,15 @@ import sys
 
 if __package__:  # imported as vis_athenak.main
     from . import config
-    from .plotting import combined, slice2d, video
+    from .plotting import combined, particles, slice2d, video
     from .plotting.slice2d import n_workers
 else:            # python main.py
     import config
-    from plotting import combined, slice2d, video
+    from plotting import combined, particles, slice2d, video
     from plotting.slice2d import n_workers
 
-COMMANDS = {"slices": slice2d.main, "combined": combined.main, "video": video.main}
+COMMANDS = {"slices": slice2d.main, "combined": combined.main, "video": video.main,
+            "particles": particles.main}
 
 
 def run_tasks(argv) -> None:
@@ -36,18 +39,19 @@ def run_tasks(argv) -> None:
     parser = argparse.ArgumentParser(
         prog="main.py",
         description="Make the plots switched on in config.MAIN.  Commands "
-                    "slices, combined and video run a single task.",
+                    "slices, combined, video and particles run a single task.",
     )
     for name, help_text in [
         ("make_slices", "one image per frame and variable in PLOT_ORDER"),
         ("make_combined", "one image per frame of COMBINED['layout']"),
         ("make_video", "a video of the combined images"),
+        ("make_particles", "a movie of tracked particles (config.PARTICLES)"),
         ("save_png", "keep PNGs; if off, skip the slices and delete the combined "
                      "images once the video is made"),
     ]:
         parser.add_argument(f"--{name.replace('_', '-')}", dest=name,
-                            action=argparse.BooleanOptionalAction, default=switches[name],
-                            help=f"{help_text} (default: {switches[name]})")
+                            action=argparse.BooleanOptionalAction, default=switches.get(name, False),
+                            help=f"{help_text} (default: {switches.get(name, False)})")
     parser.add_argument("--run", default=config.RUN, choices=list(config.SIMULATIONS),
                         help=f"simulation (default: {config.RUN})")
     parser.add_argument("--frames", nargs="+",
@@ -64,9 +68,10 @@ def run_tasks(argv) -> None:
         # The slices are PNGs only, so with save_png off there is nothing to keep.
         print("save_png is off: skipping the single-variable slices")
         args.make_slices = False
-    if not (args.make_slices or args.make_combined or args.make_video):
-        parser.error("nothing to do: make_slices (or save_png), make_combined and "
-                     "make_video are all off")
+    if not (args.make_slices or args.make_combined or args.make_video
+            or args.make_particles):
+        parser.error("nothing to do: make_slices (or save_png), make_combined, "
+                     "make_video and make_particles are all off")
 
     common = ["--run", args.run, "--workers", str(args.workers)]
     if args.frames:
@@ -84,6 +89,12 @@ def run_tasks(argv) -> None:
         # made in the same run, so these are kept.
         print("── video")
         video.main(["--run", args.run])
+    if args.make_particles:
+        # Particle files are numbered on their own, so --frames is not passed on;
+        # PARTICLES["frames"] picks them.
+        print("── particles")
+        particles.main(["--run", args.run, "--workers", str(args.workers),
+                        "--save-png" if args.save_png else "--no-save-png"])
 
 
 def main(argv=None):

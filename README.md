@@ -25,7 +25,7 @@ vis_athenak/
 
 | File | Purpose |
 |---|---|
-| `main.py` | Entry point. With no command it runs the tasks switched on in `config.MAIN` (slices, combined figure, video); `slices`, `combined` and `video` run a single task with all its options. |
+| `main.py` | Entry point. With no command it runs the tasks switched on in `config.MAIN` (slices, combined figure, video, particle movie); `slices`, `combined`, `video` and `particles` run a single task with all its options. |
 | `config.py` | Everything you change between runs: `RUN` / `SIMULATIONS` (which runs, with paths relative to the `.env` roots), `PLOT` (slice axis, units, figure size), `FONTS`, `PLOT_VARS` (quantity, units, label, colormap, limits per variable), `PLOT_ORDER`, `COMBINED` (panel grid and video), `MAIN` (task switches) and `N_WORKERS`. |
 | `.env.example` | Template for `.env` (gitignored): `ATHENAK_DIR`, `ATHINPUT_DIR`, optional `DATA_DIR`, `CONDA_ENV`. |
 | `.envrc` | [direnv](https://direnv.net) config: on entering the repo, activates `CONDA_ENV` from `.env` (the root folders are read by Python, so edits to `.env` apply on the next run). |
@@ -42,6 +42,7 @@ vis_athenak/
 | `athinput.py` | `parse_athinput`: athinput file → `{section: {key: value}}`. |
 | `readers.py` | Reads headers (time, variable names) and data from single `.bin` / `.athdf` files. |
 | `athdf.py` | Fast single-variable reads from `.athdf` files. |
+| `particles.py` | `ParticleData` / `ParticleFile`: a run's particle outputs (`.prtclbin`, or AthenaK's `.part.vtk`), memory-mapped so only the columns and particles asked for are read; `track(tags, columns)` matches particles across files by tag. |
 | `plane.py` | `FramePlane`: a lazy 2D slice of a frame that reads only the meshblocks crossing it (`.bin` via seeks, `.athdf` via h5py selections); falls back to full reads for files it can't handle. |
 | `__main__.py` | `python -m simulation_data <athinput> <datafolder>` prints a summary of a run. |
 
@@ -53,6 +54,7 @@ vis_athenak/
 | `slices.py` | `Plane` (a lazy 2D slice of a frame, from `simulation_data/plane.py`: each field's slice is read on first use from only the meshblocks crossing it, and derived quantities are computed on the slice), `take_slice` (slice an already computed 3D array) and `draw_slice` (draw on a matplotlib axes; `imshow` for uniform grids, `pcolormesh` otherwise); plain functions with no config, for your own scripts. |
 | `slice2d.py` | `python main.py slices`: one image per frame and variable. Also holds the helpers the other scripts share (variable settings, fonts, worker count). |
 | `combined.py` | `python main.py combined`: one multi-panel image per frame, laid out by `config.COMBINED["layout"]`; can compare several runs side by side. |
+| `particles.py` | `python main.py particles`: movie of tracked particles with fading trails, coloured by a quantity, optionally over a gas slice; see [Particle movies](#particle-movies). |
 | `video.py` | `python main.py video`: stitches numbered images into an mp4 with ffmpeg; frames larger than `COMBINED["video_max_size"]` (default 4096 px per side, the encoders' limit) are scaled down to fit. |
 
 **`utils/`** — shared helpers
@@ -77,6 +79,7 @@ vis_athenak/
 
 | File | Purpose |
 |---|---|
+| `test_particles.py` | Self-contained check of the particle reader (writes small shuffled `.prtclbin` files, checks tag matching): `python test/test_particles.py`. |
 | `test_simulation_data.py` | Walkthrough of every `SimulationData` / `Frame` / `Field` feature on a real run; edit the paths at the top and run `python test/test_simulation_data.py` (needs `pip install -e .`). |
 
 ## Setup
@@ -116,7 +119,8 @@ python main.py combined --layout "dens,temp;pres,t_cool" --video
 python main.py --no-save-png                # video only: no slices, combined images deleted
 python main.py combined --video --no-save-png   # the same, as a single task
 python main.py video --fps 5                # video of existing combined images
-python main.py [slices|combined|video] --help
+python main.py particles                    # particle movie, see below
+python main.py [slices|combined|video|particles] --help
 ```
 
 After `pip install -e .`, `vis_athenak` does the same as `python main.py`
@@ -135,7 +139,8 @@ run with a flag:
 | `make_slices` | `--[no-]make-slices` | One image per frame and variable in `PLOT_ORDER`. |
 | `make_combined` | `--[no-]make-combined` | One image per frame of `COMBINED["layout"]`. |
 | `make_video` | `--[no-]make-video` | An mp4 of the combined images. |
-| `save_png` | `--[no-]save-png` | When off: no slices, and the combined images are deleted once the video is made (only those written in that run; without a video they are kept). |
+| `make_particles` | `--[no-]make-particles` | A movie of tracked particles (`PARTICLES`). |
+| `save_png` | `--[no-]save-png` | When off: no slices, and the combined (and particle) images are deleted once the video is made (only those written in that run; without a video they are kept). |
 
 Frames are plotted in parallel by `N_WORKERS` worker processes (`1` runs
 serially); `-w N` / `--workers N` overrides it for one run.
@@ -154,6 +159,58 @@ COMBINED["layout"] = [[("run_a", "temp"), ("run_b", "temp")]]   # two runs side 
 A row (or column) holding one variable throughout shares one colorbar.
 On the command line the same grid is `--layout "dens,temp;pres,t_cool"`
 (rows by `;`, cells by `,`, `run:var` for another run, `-` for empty).
+
+## Particle movies
+
+`python main.py particles` makes a movie of tracer particles: a few tracked
+particles with fading trails, coloured by a quantity (temperature by default),
+optionally over a gas slice and a cloud of faint background particles.  The
+same settings work for any setup (a periodic 2D mixing layer, a 3D cloud in a
+wind with outflow boundaries, ...): the domain, periodicity, dimensions and
+units come from the run's athinput, and particles are matched across files by
+tag, so it does not matter that they change order between files or leave the
+box.
+
+1. Add the particle folder to the run in `config.SIMULATIONS`
+   (`particles="myrun/pbin"`, relative to `DATA_DIR`).  Without it the data
+   folder and its parent are searched for `*.prtclbin` / `*.part.vtk`.
+2. Check what the files hold:
+
+   ```bash
+   python main.py particles --run myrun --info
+   ```
+
+   It lists the columns with their ranges, warns if positions fall outside
+   the mesh (then the real columns are not `x, y, z, vx, vy, vz`: set
+   `PARTICLES["rdata_names"]`), and shows whether `temp` looks like code
+   units or K (if K: `PARTICLES["stored_units"] = {"temp": "K"}`).
+3. Make the movie:
+
+   ```bash
+   python main.py particles --run myrun                     # config.PARTICLES
+   python main.py particles --n 20 --bins 2e4 3e5           # 20 split over 3 T bins
+   python main.py particles --tags 12 503 9981 --trail -1   # these, whole history
+   python main.py particles --require first:1e6: last::2e4 --bins --trail -1   # gas that condenses
+   python main.py particles --gas temp --background 20000   # over a T slice, with a cloud
+   python main.py particles --frames 0:1000:2 --fps 30 -w 8
+   ```
+
+Settings live in `config.PARTICLES` (every one has a flag; `--help` lists
+them).  The colour quantity is a `PLOT_VARS` key (its label, units, norm and
+limits are used) or any particle column or derived quantity (`temp` is
+derived from `dens` and `eint`/`pres` if not stored).  Images, the video and
+a cache of the trajectories (`<name>.tracks.npz`, reused when only plot
+settings change; `--refresh` rereads) go to `<out>/particles/`.
+
+From Python:
+
+```python
+from simulation_data import ParticleData
+
+pdata = ParticleData("path/to/pbin", basename="TRML")
+pdata[-1].names                          # columns
+tr = pdata.track([3, 17, 42], ["x", "y", "temp"])   # (n_files, 3), NaN when absent
+```
 
 ## Using SimulationData from Python
 

@@ -33,8 +33,9 @@ else:            # run from the repo root
 MAIN = dict(
     make_slices=True,    # one image per frame and variable in PLOT_ORDER
     make_combined=True,  # one image per frame of COMBINED["layout"]
-    make_video=True,     # a video of the combined images
+    make_video=False,     # a video of the combined images
     save_png=False,       # False: no slices, and the combined images are deleted once in the video
+    make_particles=False,  # a movie of tracked particles, set up by PARTICLES below
 )
 
 # Parallel worker processes for plotting frames (slices and combined figures);
@@ -42,16 +43,35 @@ MAIN = dict(
 # lower this for large runs.  -w/--workers overrides it for one run.
 N_WORKERS = 2
 
-RUN = "tcgm_tvw"  # default simulation
+RUN = "clumps"  # default simulation
 
 SIMULATIONS = {
-    "tcgm_tvw": dict(
-        athinput="wind_outflow/wind_outflow_tcgm_tmdot_tvw.athinput",          # relative to $ATHINPUT_DIR
-        data="build_wind_outflow_tcgm_tmdot_tvw/src/tcgm13_tmdot31_vw2_100Myr_2d/bin",       # relative to $DATA_DIR
-        out="build_wind_outflow_tcgm_tmdot_tvw/src/tcgm13_tmdot31_vw2_100Myr_2d/plots",  # relative to $DATA_DIR
+    "clumps": dict(
+        athinput="X_ray_H_alpha_test.athinput",          # relative to $ATHINPUT_DIR
+        data="bin",       # relative to $DATA_DIR
+        out="plots",  # relative to $DATA_DIR
         outputs=None,  # output ids, e.g. ["hydro_w"]; None = auto (see SimulationData)
         frames=None,   # frame numbers, e.g. range(0, 21, 5); None = all
+        particles=None,  # folder of particle files (relative to $DATA_DIR); None = search
+                         # the data folder and its parent
     ),
+    # Runs with tracer particles, e.g.:
+    # "trml_fid2d": dict(
+    #     athinput="trml/trml_fid2d.athinput",
+    #     data="trml_fid2d/bin",
+    #     out="trml_fid2d/plots",
+    #     particles="trml_fid2d/pbin",
+    #     outputs=None,
+    #     frames=None,
+    # ),
+    # "clump": dict(
+    #     athinput="clumps/clumps.athinput",
+    #     data="clumps_run1/bin",
+    #     out="clumps_run1/plots",
+    #     particles="clumps_run1/pbin",
+    #     outputs=None,
+    #     frames=None,
+    # ),
     # "cbox_tabcool": dict(
     #     athinput="cooling_box/cbox.athinput",
     #     data="build_cooling_box/src/cbox_tabcool",
@@ -71,6 +91,9 @@ def resolve(run: str = RUN) -> dict:
     data_root = env_path("DATA_DIR", fallback="ATHENAK_DIR")
     sim["data"] = data_root / sim["data"]
     sim["out"] = data_root / sim["out"]
+    sim.setdefault("outputs", None)
+    sim.setdefault("frames", None)
+    sim["particles"] = data_root / sim["particles"] if sim.get("particles") else None
     return sim
 
 
@@ -155,7 +178,7 @@ PLOT_ORDER = [
     # "pres",
     "temp",
     # "tracer",
-    "velx",
+    #"velx",
     "vely",
     # "entropy",
     # "t_cool",
@@ -172,7 +195,7 @@ COMBINED = dict(
     layout=[
         ["dens"],
         ["temp"],
-        ["velx"],
+        # ["velx"],
         ["vely"],
     ],
     fps=24,           # video frames per second
@@ -182,6 +205,68 @@ COMBINED = dict(
 # Comparing runs, one row per variable and one column per run:
 # COMBINED["layout"] = [[(run, var) for run in ["cbox_02Myr", "cbox_tabcool"]]
 #                       for var in ["dens", "temp"]]
+
+
+# ── Particle movies ──────────────────────────────────────────────────────
+# python main.py particles (or MAIN["make_particles"]): tracked particles with
+# fading trails, one image per particle output file, then a video.  Works for
+# any run: domain, periodicity, dimensions and units come from its athinput.
+# Every setting has a command-line flag; python main.py particles --help.
+# Start with  python main.py particles --info  to see what the files hold.
+PARTICLES = dict(
+    # What to track
+    n_track=10,         # how many particles get markers and trails
+    bins=[1.0e5],       # edges in the colour's units; n_track is split evenly over
+                        # the bins (here half below 1e5 K, half above); None = random
+    tags=None,          # or exactly these tags, e.g. [12, 503, 9981]
+    require=None,       # history conditions on the colour quantity, "FILE:LO:HI" with FILE
+                        # a particle file number, first, last or last-N; LO/HI may be empty.
+                        # Condensing gas (hot at the start, cold at the end):
+                        #   require=["first:1e6:", "last::2e4"]
+    select_at=None,     # particle file number where they are picked; None = first frame
+    region=None,        # pick only inside, in length_units: dict(x=(-1, 1), y=(0, None))
+    seed=0,             # random picks are reproducible; change for another set
+    background=0,       # this many other particles drawn as faint dots (no trails)
+    trail=50,           # trail length in frames; 0 = none, -1 = whole history
+    frames=None,        # particle file numbers, e.g. range(0, 1001, 2); None = all
+
+    # Colour: a PLOT_VARS key (its label/units/cmap/norm/vmin/vmax are used) or
+    # any particle column / derived quantity; None = one colour.
+    color="temp",
+    cmap="turbo",       # colormap of the particles; None = the one in PLOT_VARS
+    cmap_range=(0.12, 1.0),  # part of the colormap used; drops turbo's near-black end
+    vmin=None,          # colour range; None = PLOT_VARS', else the movie's data range
+    vmax=None,
+
+    # Gas drawn underneath (PLOT_VARS key), from the grid output nearest in time;
+    # None = particles only.
+    gas=None,
+    gas_cmap="Greys_r",  # None = the colormap in PLOT_VARS
+    gas_alpha=0.6,
+
+    # View (axis and slice position come from PLOT)
+    xlim=None,          # (lo, hi) in length_units; None = whole domain
+    ylim=None,
+    slab=None,          # 3D: background dots only within this thickness of the slice
+    length_units=None,  # None = PLOT's; "code" to keep code units
+    time_units=None,    # None = PLOT's
+    time_decimals=2,
+    style="dark",       # "dark" or "light"
+    marker_size=120,
+    fig_size=None,      # (w, h) in inches; None = fitted to the domain
+    dpi=100,
+    title=None,         # None = the run name
+    name="particles",   # file prefix: <out>/particles/<name>.<axis>.NNNNN.png and .mp4
+    fps=25,
+    video=True,
+
+    # Particle file format.  Grid fields sampled at the particles are taken to be
+    # in code units; name any stored in other units, e.g. {"temp": "K"}.
+    stored_units={},
+    rdata_names=None,   # real columns of .prtclbin; None = x, y, z, vx, vy, vz
+    idata_names=None,   # integer columns; None = gid, tag, lastmove, lastlevel
+    stem=None,          # file name stem if a folder holds several particle sets
+)
 
 
 def plot_var(name: str) -> dict:

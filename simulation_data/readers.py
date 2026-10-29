@@ -60,7 +60,8 @@ def read_variable_names(path: Path) -> list[str]:
 
 def can_read_single_variable(path: Path) -> bool:
     """Whether `read_file` can read some variables of `path` without the rest.
-    The .bin reader always reads every variable of a file."""
+    The .bin reader here always reads every variable of a file; `Frame` reads
+    single variables of .bin files through `plane.read_bin_slab` instead."""
     return path.suffix == ".athdf"
 
 

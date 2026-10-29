@@ -12,8 +12,13 @@ holds the slice at the same index inside the block.  Only those blocks are
 read, and only the variables asked for:
 
 - ``.bin``: the block records are scanned once (`BinLayout`), reading only the
-  small header of each, then the needed blocks are read with seeks.
+  small header of each, then the needed blocks are read with seeks.  Later
+  frames of the same output reuse that block table (unless the mesh is AMR),
+  checking only their first and last records, since a full scan costs one seek
+  per block.
 - ``.athdf``: one h5py read per level and variable selects just the planes.
+
+`read_slab` reads a range of planes (a slab) the same way, for .bin files.
 
 The planes are merged as the full readers merge blocks (each block repeated
 ``2**(max_level - level)`` times per axis and placed at its logical location),
@@ -60,7 +65,16 @@ class BinLayout:
     supported: bool               # False: read the whole file instead
 
     @classmethod
-    def read(cls, path: Path) -> BinLayout:
+    def read(cls, path: Path, template: BinLayout | None = None) -> BinLayout:
+        """
+        Read the layout of ``path``.  Scanning every block record costs one
+        seek per block, as slow on an HDD as reading the whole file, so with a
+        ``template`` (the layout of another frame of the same output) whose
+        block table must be the same, only the text header and the first and
+        last block records are read, and the template's table is shifted to
+        this file's header length.  Without a template, or if the file does
+        not match it, every record is scanned.
+        """
         with open(path, "rb") as fp:
             fp.seek(0, 2)
             filesize = fp.tell()
@@ -84,20 +98,34 @@ class BinLayout:
             var_dtype = np.dtype(np.float64 if varsize == 8 else np.float32)
             nghost = int(params["mesh"]["nghost"])
 
-            # Scan the block records: 24 B index range, 16 B logical location
-            # and level, 6 locations of geometry, then nvars * ncells values.
-            levels, locations, offsets, sizes = [], [], [], set()
-            while fp.tell() < filesize:
+            # Block records: 24 B index range, 16 B logical location and
+            # level, 6 locations of geometry, then nvars * ncells values.
+            def record(fp):
                 index = np.frombuffer(fp.read(24), dtype=np.int32).astype(np.int64) - nghost
                 logical = np.frombuffer(fp.read(16), dtype=np.int32)
                 size = (int(index[1] - index[0] + 1), int(index[3] - index[2] + 1),
                         int(index[5] - index[4] + 1))
-                sizes.add(size)
                 fp.seek(6 * locsize, 1)
-                offsets.append(fp.tell())
-                locations.append(logical[:3].astype(np.int64))
-                levels.append(int(logical[3]))
-                fp.seek(nvars * size[0] * size[1] * size[2] * varsize, 1)
+                return size, logical[:3].astype(np.int64), int(logical[3])
+
+            data_start = fp.tell()
+            shifted = None
+            adaptive = params.get("mesh_refinement", {}).get("refinement", "none") == "adaptive"
+            if template is not None and template.supported and not adaptive:
+                shifted = cls._shift(template, fp, record, data_start, filesize, var_names,
+                                     var_dtype, 24 + 16 + 6 * locsize)
+            if shifted is not None:
+                levels, locations, offsets, sizes = shifted
+            else:
+                fp.seek(data_start)
+                levels, locations, offsets, sizes = [], [], [], set()
+                while fp.tell() < filesize:
+                    size, location, level = record(fp)
+                    sizes.add(size)
+                    offsets.append(fp.tell())
+                    locations.append(location)
+                    levels.append(level)
+                    fp.seek(nvars * size[0] * size[1] * size[2] * varsize, 1)
 
         root = [int(params["mesh"][f"nx{d}"]) for d in (1, 2, 3)]
         meshblock = [int(params["meshblock"][f"nx{d}"]) for d in (1, 2, 3)]
@@ -126,6 +154,26 @@ class BinLayout:
             supported=supported,
         )
 
+    @staticmethod
+    def _shift(template, fp, record, data_start, filesize, var_names, var_dtype, head):
+        """The template's block table moved to this file, if the file matches
+        it: same variables, block count and size, and the same first and last
+        block.  None otherwise."""
+        nmb = len(template.locations)
+        nx1, nx2, nx3 = template.block_size
+        stride = head + len(var_names) * nx1 * nx2 * nx3 * var_dtype.itemsize
+        if (var_names != template.var_names or var_dtype != template.var_dtype
+                or filesize - data_start != nmb * stride):
+            return None
+        for b in (0, nmb - 1):
+            fp.seek(data_start + b * stride)
+            size, location, level = record(fp)
+            if (size != template.block_size or level != template.levels[b]
+                    or not np.array_equal(location, template.locations[b])):
+                return None
+        offsets = data_start + head + stride * np.arange(nmb)
+        return list(template.levels), list(template.locations), offsets, {template.block_size}
+
     def grid(self, dtype=None) -> dict:
         """Coordinates and attributes as ``read_binary_as_athdf`` builds them."""
         dtype = np.float32 if dtype is None else dtype
@@ -138,6 +186,19 @@ class BinLayout:
             grid[f"x{d}v"] = (0.5 * (faces[:-1] + faces[1:])).astype(dtype)
         grid.update(Time=self.time, NumCycles=self.cycle, MaxLevel=self.max_level)
         return grid
+
+
+# Last layout read in each output directory: the template for the next file
+# there (frames of one output share their block table unless the mesh is AMR).
+_LAYOUTS: dict[Path, BinLayout] = {}
+
+
+def bin_layout(path: Path) -> BinLayout:
+    """`BinLayout` of ``path``, using the last layout read in its directory
+    as the template."""
+    layout = BinLayout.read(path, template=_LAYOUTS.get(path.parent))
+    _LAYOUTS[path.parent] = layout
+    return layout
 
 
 def _parse_input_text(text: str) -> dict[str, dict[str, str]]:
@@ -200,34 +261,103 @@ def _plane_shape(shape, cut):
 
 # ── Reading planes ───────────────────────────────────────────────────────
 
-def read_bin_plane(path: Path, layout: BinLayout, names: list[str], cut: int,
-                   index: int, dtype=None) -> dict[str, np.ndarray]:
-    """Planes of ``names`` from a .bin file, reading only the crossing blocks."""
+def read_bin_slab(path: Path, layout: BinLayout, names: list[str], cut: int,
+                  start: int, stop: int, dtype=None) -> dict[str, np.ndarray]:
+    """
+    Finest-level indices ``start:stop`` along array axis ``cut`` of
+    ``names`` from a .bin file, reading only the blocks overlapping them, and
+    of those only the planes needed when ``cut`` is the z axis.  Equals
+    ``frame[name][start:stop]`` (along ``cut``) of the full read.
+    """
     unknown = [n for n in names if n not in layout.var_names]
     if unknown:
         raise KeyError(f"{unknown} not in {path}; it has {layout.var_names}")
+    extended = [n > 1 for n in layout.shape]
+    if not extended[cut]:
+        start, stop = 0, 1
+    if not 0 <= start < stop <= layout.shape[cut]:
+        raise IndexError(f"slab {start}:{stop} outside axis {cut} of size {layout.shape[cut]}")
     dtype = np.float32 if dtype is None else dtype
-    out = {n: np.zeros(_plane_shape(layout.shape, cut), dtype=dtype) for n in names}
+    shape = tuple(stop - start if a == cut else n for a, n in enumerate(layout.shape))
+    out = {n: np.zeros(shape, dtype=dtype) for n in names}
     bs = layout.block_size[::-1]          # (nz, ny, nx) of each block's data
     ncells = bs[0] * bs[1] * bs[2]
+    plane = ncells // bs[0]               # cells of one z-plane of a block
     itemsize = layout.var_dtype.itemsize
-    extended_inplane = [layout.shape[a] > 1 for a in range(3) if a != cut]
 
     with open(path, "rb") as fp:
-        for b, local, s, dest in _crossing_blocks(
-                layout.levels, layout.locations, layout.block_size, layout.shape,
-                layout.max_level, cut, index):
+        for b, (level, loc) in enumerate(zip(layout.levels, layout.locations)):
+            s = 2 ** (layout.max_level - int(level))
+            loc = loc[::-1]               # (x3, x2, x1)
+            if extended[cut]:
+                b0 = loc[cut] * bs[cut] * s
+                lo, hi = max(start, b0), min(stop, b0 + bs[cut] * s)
+                if lo >= hi:
+                    continue
+                local = (np.arange(lo, hi) - b0) // s   # block planes, prolongated
+            else:
+                lo, hi, local = 0, 1, np.zeros(1, dtype=int)
+            first, last = int(local[0]), int(local[-1]) + 1
+            dest = tuple(slice(lo - start, hi - start) if a == cut
+                         else slice(loc[a] * bs[a] * s, (loc[a] + 1) * bs[a] * s) if extended[a]
+                         else slice(0, 1) for a in range(3))
             for n in names:
-                start = layout.data_offsets[b] + layout.var_names.index(n) * ncells * itemsize
-                if cut == 0:  # a z-plane is contiguous within the block
-                    fp.seek(start + local * bs[1] * bs[2] * itemsize)
-                    block_plane = np.fromfile(fp, layout.var_dtype, bs[1] * bs[2])
-                    block_plane = block_plane.reshape(bs[1], bs[2])
+                offset = layout.data_offsets[b] + layout.var_names.index(n) * ncells * itemsize
+                if cut == 0:  # z-planes are contiguous within the block
+                    fp.seek(offset + first * plane * itemsize)
+                    block = np.fromfile(fp, layout.var_dtype, (last - first) * plane)
+                    block = block.reshape(last - first, bs[1], bs[2])
                 else:
-                    fp.seek(start)
+                    fp.seek(offset)
                     block = np.fromfile(fp, layout.var_dtype, ncells).reshape(bs)
-                    block_plane = np.take(block, local, axis=cut)
-                _place(out[n], block_plane, s, dest, extended_inplane)
+                    block = block.take(np.arange(first, last), axis=cut)
+                block = block.take(local - first, axis=cut)
+                for a in range(3):
+                    if a != cut and s > 1 and extended[a]:
+                        block = np.repeat(block, s, axis=a)
+                out[n][dest] = block
+    return out
+
+
+def read_bin_plane(path: Path, layout: BinLayout, names: list[str], cut: int,
+                   index: int, dtype=None) -> dict[str, np.ndarray]:
+    """Planes of ``names`` from a .bin file, reading only the crossing blocks."""
+    slab = read_bin_slab(path, layout, names, cut, index, index + 1, dtype)
+    return {n: np.take(a, 0, axis=cut) for n, a in slab.items()}
+
+
+def read_slab(frame, names, axis: str = "z", start: int = 0, stop: int | None = None,
+              dtype=None) -> dict[str, np.ndarray]:
+    """
+    Finest-level cells ``start:stop`` along the ``axis`` normal of the fields
+    ``names`` of ``frame``, as numpy arrays of shape (nx3, nx2, nx1) cut to
+    the slab.  From .bin files only the overlapping blocks are read; other
+    files, and fields the frame already holds, are sliced from the full field.
+    """
+    cut = AXES[axis][0]
+    dtype = frame._dtype if dtype is None else dtype
+    out, by_path = {}, {}
+    for key in names:
+        field = frame.fields[key]
+        path = field.path
+        if field.is_loaded or path.suffix != ".bin" or path.parent.name == RANK0_DIR:
+            data = to_device(field.data, Device.CPU)
+            stop_ = data.shape[cut] if stop is None else stop
+            out[key] = np.take(data, np.arange(start, stop_), axis=cut)
+        else:
+            by_path.setdefault(path, []).append(key)
+    for path, keys in by_path.items():
+        layout = bin_layout(path)
+        if not layout.supported:
+            for key in keys:
+                data = frame[key]
+                stop_ = data.shape[cut] if stop is None else stop
+                out[key] = np.take(data, np.arange(start, stop_), axis=cut)
+            continue
+        stop_ = layout.shape[cut] if stop is None else stop
+        file_names = [frame.fields[k].name for k in keys]
+        slab = read_bin_slab(path, layout, file_names, cut, start, stop_, dtype)
+        out.update({k: slab[n] for k, n in zip(keys, file_names)})
     return out
 
 
@@ -305,7 +435,7 @@ class FramePlane:
         if path.suffix != ".bin" or path.parent.name == RANK0_DIR:
             return None
         if path not in self._bin_layouts:
-            self._bin_layouts[path] = BinLayout.read(path)
+            self._bin_layouts[path] = bin_layout(path)
         return self._bin_layouts[path]
 
     @property

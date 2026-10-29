@@ -9,7 +9,9 @@ import numpy as np
 from . import athdf
 from .device import Device, as_device, to_device
 from .field import Field
-from .readers import can_read_single_variable, read_file, read_time, read_variable_names
+from .plane import bin_layout, read_bin_slab
+from .readers import (RANK0_DIR, can_read_single_variable, read_file, read_time,
+                      read_variable_names)
 
 
 class Frame:
@@ -24,9 +26,11 @@ class Frame:
     coordinate arrays ``x1f, x1v, x2f, ...`` and file attributes (``Time``,
     ``NumCycles``, ...) are in ``frame.grid`` and can be indexed the same way.
 
-    From .athdf files only the requested fields are read.  A .bin file can
-    only be read whole, so asking for one of its fields loads all of them,
-    but the files of the other outputs in the frame are still not read.
+    Only the requested fields are read, from .athdf and single-rank .bin
+    files alike (a .bin file's block table is found from its header and
+    reused across frames, see `plane.BinLayout`).  Rank-split .bin outputs,
+    ghost zones and AthenaK slice/sum outputs are read whole, loading every
+    field of that file; the files of the other outputs are still not read.
 
     If two outputs hold a variable of the same name (``dens`` in both
     ``hydro_w`` and ``hydro_u``), the first output's is ``fields["dens"]`` and
@@ -44,8 +48,9 @@ class Frame:
         self._fields: dict[str, Field] | None = None
         self._grid: dict | None = None
         self._time: float | None = None
-        # Block layouts of .athdf files; kept by unload(), like the field list.
-        self._layouts: dict[Path, athdf.AthdfLayout] = {}
+        # Block layouts of .athdf (AthdfLayout) and .bin (BinLayout) files;
+        # kept by unload(), like the field list.
+        self._layouts: dict = {}
 
     @property
     def time(self) -> float:
@@ -97,6 +102,15 @@ class Frame:
                 for field in wanted:
                     field._data = to_device(data[field.name], device)
                 continue
+            layout = self._bin_layout(path)
+            if layout is not None and layout.supported:
+                # Only the wanted variables of each block are read.
+                nz = layout.shape[0]
+                data = read_bin_slab(path, layout, [f.name for f in wanted], 0, 0, nz,
+                                     self._dtype)
+                for field in wanted:
+                    field._data = to_device(data[field.name], device)
+                continue
             if can_read_single_variable(path):
                 data = read_file(path, self._dtype, quantities=[f.name for f in wanted])
             else:
@@ -116,12 +130,23 @@ class Frame:
             self._layouts[path] = athdf.read_layout(path)
         return self._layouts[path]
 
+    def _bin_layout(self, path: Path):
+        """Block table of a single-rank .bin file, read once and cached; None otherwise."""
+        if path.suffix != ".bin" or path.parent.name == RANK0_DIR:
+            return None
+        if path not in self._layouts:
+            self._layouts[path] = bin_layout(path)
+        return self._layouts[path]
+
     @property
     def grid(self) -> dict:
         """Coordinates (``x1f``, ``x1v``, ...) and file attributes (``Time``, ...)."""
         if self._grid is None:
             path = next(iter(self.paths.values()))
-            if can_read_single_variable(path):
+            layout = self._bin_layout(path)
+            if layout is not None and layout.supported:
+                self._grid = layout.grid(self._dtype)
+            elif can_read_single_variable(path):
                 self._keep_grid(read_file(path, self._dtype, quantities=[]))
             else:
                 self.load([next(f for f in self.fields.values() if f.path == path)])

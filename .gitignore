@@ -6,6 +6,8 @@
 *.vtk
 *.tab
 *.npy
+*.npz
+*.prtclbin
 
 # Python
 __pycache__/

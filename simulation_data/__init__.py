@@ -27,6 +27,8 @@ field            Field: one lazily loaded variable of a Frame
 device           Device: where a field is held (CPU numpy / GPU cupy / not loaded)
 athdf            fast reads of single variables from .athdf files
 simulation_data  SimulationData: discovers the frames of a run
+particles        ParticleData / ParticleFile: particle outputs (.prtclbin, .part.vtk),
+                 read per column and matched across files by tag
 
 Run as a module to print a summary of a run:
 
@@ -37,6 +39,8 @@ from .athinput import parse_athinput
 from .device import Device
 from .field import Field
 from .frame import Frame
+from .particles import ParticleData, ParticleFile
 from .simulation_data import SimulationData
 
-__all__ = ["Device", "Field", "Frame", "SimulationData", "parse_athinput"]
+__all__ = ["Device", "Field", "Frame", "ParticleData", "ParticleFile", "SimulationData",
+           "parse_athinput"]
